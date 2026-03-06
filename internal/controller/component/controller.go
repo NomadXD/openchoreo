@@ -125,14 +125,17 @@ func (r *Reconciler) reconcileWithComponentType(ctx context.Context, comp *openc
 		return ctrl.Result{}, nil
 	}
 
-	// Validate and fetch Workload
-	workload, err := r.validateAndFetchWorkload(ctx, comp)
-	if err != nil {
-		return ctrl.Result{}, err
-	}
-	if workload == nil {
-		// Validation error, condition already set
-		return ctrl.Result{}, nil
+	// Validate and fetch Workload (proxy workloadType does not require a Workload)
+	var workload *openchoreov1alpha1.Workload
+	if ct.Spec.WorkloadType != "proxy" {
+		workload, err = r.validateAndFetchWorkload(ctx, comp)
+		if err != nil {
+			return ctrl.Result{}, err
+		}
+		if workload == nil {
+			// Validation error, condition already set
+			return ctrl.Result{}, nil
+		}
 	}
 
 	// Validate traits
@@ -772,7 +775,9 @@ func (r *Reconciler) ensureComponentRelease(
 				ComponentType:    ct.Spec,
 				Traits:           buildTraitsMap(traits),
 				ComponentProfile: buildComponentProfile(comp),
-				Workload:         workload.Spec.WorkloadTemplateSpec,
+			}
+			if workload != nil {
+				existingRelease.Spec.Workload = workload.Spec.WorkloadTemplateSpec
 			}
 
 			if err := r.Update(ctx, existingRelease); err != nil {
@@ -811,8 +816,10 @@ func (r *Reconciler) ensureComponentRelease(
 			ComponentType:    ct.Spec,
 			Traits:           buildTraitsMap(traits),
 			ComponentProfile: buildComponentProfile(comp),
-			Workload:         workload.Spec.WorkloadTemplateSpec,
 		},
+	}
+	if workload != nil {
+		componentRelease.Spec.Workload = workload.Spec.WorkloadTemplateSpec
 	}
 
 	if err := r.Create(ctx, componentRelease); err != nil {

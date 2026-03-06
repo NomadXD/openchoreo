@@ -62,7 +62,7 @@ func BuildReleaseSpec(
 	if ct == nil {
 		return nil, fmt.Errorf("componentType cannot be nil")
 	}
-	if workload == nil {
+	if workload == nil && ct.Spec.WorkloadType != "proxy" {
 		return nil, fmt.Errorf("workload cannot be nil")
 	}
 	if comp == nil {
@@ -88,12 +88,14 @@ func BuildReleaseSpec(
 		}
 	}
 
-	// Construct ReleaseSpec
+	// Construct ReleaseSpec (workload is optional for proxy workloadType)
 	releaseSpec := &ReleaseSpec{
 		ComponentType:    ct.Spec,
 		Traits:           traitsMap,
 		ComponentProfile: componentProfile,
-		Workload:         workload.Spec.WorkloadTemplateSpec,
+	}
+	if workload != nil {
+		releaseSpec.Workload = workload.Spec.WorkloadTemplateSpec
 	}
 
 	return releaseSpec, nil
