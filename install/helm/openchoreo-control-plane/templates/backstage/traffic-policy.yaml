@@ -1,4 +1,5 @@
-{{- if and .Values.backstage.enabled .Values.backstage.http.enabled .Values.gateway.enabled .Values.backstage.http.hostnames -}}
+{{- /* TrafficPolicy is a kgateway-specific CRD; only render it when the gateway uses the kgateway GatewayClass. */ -}}
+{{- if and .Values.backstage.enabled .Values.backstage.http.enabled .Values.gateway.enabled .Values.backstage.http.hostnames (eq (.Values.gateway.gatewayClassName | default "kgateway") "kgateway") -}}
 apiVersion: gateway.kgateway.dev/v1alpha1
 kind: TrafficPolicy
 metadata:

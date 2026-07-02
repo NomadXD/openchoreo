@@ -1,4 +1,5 @@
-{{- if .Values.gateway.enabled }}
+{{- /* TrafficPolicy is a kgateway-specific CRD; only render it when the gateway uses the kgateway GatewayClass. */ -}}
+{{- if and .Values.gateway.enabled (eq (.Values.gateway.gatewayClassName | default "kgateway") "kgateway") }}
 apiVersion: gateway.kgateway.dev/v1alpha1
 kind: TrafficPolicy
 metadata:
