@@ -70,6 +70,7 @@ rules:
   resources:
   - clustercomponenttypes
   - clusterdataplanes
+  - clusterendpointtypes
   - clusterobservabilityplanes
   - clusterprojecttypes
   - clusterresourcetypes
@@ -81,6 +82,9 @@ rules:
   - componenttypes
   - dataplanes
   - deploymentpipelines
+  - endpointreleases
+  - endpoints
+  - endpointtypes
   - environments
   - observabilityalertrules
   - observabilityalertsnotificationchannels
@@ -113,6 +117,7 @@ rules:
   resources:
   - clustercomponenttypes/finalizers
   - clusterdataplanes/finalizers
+  - clusterendpointtypes/finalizers
   - clusterobservabilityplanes/finalizers
   - clusterprojecttypes/finalizers
   - clusterresourcetypes/finalizers
@@ -124,6 +129,9 @@ rules:
   - componenttypes/finalizers
   - dataplanes/finalizers
   - deploymentpipelines/finalizers
+  - endpointreleases/finalizers
+  - endpoints/finalizers
+  - endpointtypes/finalizers
   - environments/finalizers
   - observabilityalertrules/finalizers
   - observabilityalertsnotificationchannels/finalizers
@@ -151,6 +159,7 @@ rules:
   resources:
   - clustercomponenttypes/status
   - clusterdataplanes/status
+  - clusterendpointtypes/status
   - clusterobservabilityplanes/status
   - clusterprojecttypes/status
   - clusterresourcetypes/status
@@ -162,6 +171,9 @@ rules:
   - componenttypes/status
   - dataplanes/status
   - deploymentpipelines/status
+  - endpointreleases/status
+  - endpoints/status
+  - endpointtypes/status
   - environments/status
   - observabilityalertrules/status
   - observabilityalertsnotificationchannels/status
@@ -186,6 +198,15 @@ rules:
   - get
   - patch
   - update
+- apiGroups:
+  - openchoreo.dev
+  resources:
+  - endpointreleasebindings
+  verbs:
+  - delete
+  - get
+  - list
+  - watch
 - apiGroups:
   - openchoreo.dev
   resources:
