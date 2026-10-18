@@ -160,4 +160,6 @@ var MCPToolExemptions = map[string]string{
 		"returns a static JSON schema and calls no service method.",
 	"get_project_type_creation_schema": "Declares projecttype:create for permission-gating only; " +
 		"returns a static JSON schema and calls no service method.",
+	"get_endpoint_type_creation_schema": "Declares endpointtype:create for permission-gating only; " +
+		"returns a static JSON schema and calls no service method.",
 }
