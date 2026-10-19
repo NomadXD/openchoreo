@@ -24,6 +24,8 @@ rules:
   - resources
   - resourcetypes
   - projecttypes
+  - endpoints
+  - endpointtypes
   - clustercomponenttypes
   - clustertraits
   - clusterworkflows
@@ -32,6 +34,7 @@ rules:
   - clusterworkflowplanes
   - clusterresourcetypes
   - clusterprojecttypes
+  - clusterendpointtypes
   verbs:
   - get
   - list
