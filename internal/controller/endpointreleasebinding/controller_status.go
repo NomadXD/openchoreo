@@ -60,22 +60,23 @@ func markSyncedFalse(binding *openchoreov1alpha1.EndpointReleaseBinding,
 		"ResourcesReady cannot be evaluated until Synced=True")
 }
 
-// setReadyCondition aggregates BackendsResolved, Synced, and ResourcesReady
-// into Ready. Ready=True only when all three are True; otherwise Ready=False
-// inherits the first failing sub-condition's reason and message, with
-// BackendsResolved first because an unresolved backend is the most actionable
-// explanation.
+// setReadyCondition aggregates BackendsResolved, Synced, ResourcesReady, and
+// URLsResolved into Ready. Ready=True only when all four are True; otherwise
+// Ready=False inherits the first failing sub-condition's reason and message,
+// with BackendsResolved first because an unresolved backend is the most
+// actionable explanation.
 func setReadyCondition(binding *openchoreov1alpha1.EndpointReleaseBinding) {
 	backends := meta.FindStatusCondition(binding.Status.Conditions, string(ConditionBackendsResolved))
 	synced := meta.FindStatusCondition(binding.Status.Conditions, string(ConditionSynced))
 	resources := meta.FindStatusCondition(binding.Status.Conditions, string(ConditionResourcesReady))
+	urls := meta.FindStatusCondition(binding.Status.Conditions, string(ConditionURLsResolved))
 
-	if isTrue(backends) && isTrue(synced) && isTrue(resources) {
+	if isTrue(backends) && isTrue(synced) && isTrue(resources) && isTrue(urls) {
 		controller.MarkTrueCondition(binding, ConditionReady, ReasonReady, "EndpointReleaseBinding is ready")
 		return
 	}
 
-	for _, c := range []*metav1.Condition{backends, synced, resources} {
+	for _, c := range []*metav1.Condition{backends, synced, resources, urls} {
 		if c == nil || c.Status == metav1.ConditionTrue {
 			continue
 		}
