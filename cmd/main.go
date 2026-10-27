@@ -91,6 +91,7 @@ import (
 	resourcetypewebhook "github.com/openchoreo/openchoreo/internal/webhook/resourcetype"
 	traitwebhook "github.com/openchoreo/openchoreo/internal/webhook/trait"
 	workflowwebhook "github.com/openchoreo/openchoreo/internal/webhook/workflow"
+	workloadwebhook "github.com/openchoreo/openchoreo/internal/webhook/workload"
 )
 
 const (
@@ -549,6 +550,7 @@ func main() {
 			{"ComponentType", componenttypewebhook.SetupComponentTypeWebhookWithManager},
 			{"ClusterComponentType", clustercomponenttypewebhook.SetupClusterComponentTypeWebhookWithManager},
 			{"Component", componentwebhook.SetupComponentWebhookWithManager},
+			{"Workload", workloadwebhook.SetupWorkloadWebhookWithManager},
 			{"Trait", traitwebhook.SetupTraitWebhookWithManager},
 			{"ClusterTrait", clustertraitwebhook.SetupClusterTraitWebhookWithManager},
 			{"ComponentRelease", componentreleasewebhook.SetupComponentReleaseWebhookWithManager},
