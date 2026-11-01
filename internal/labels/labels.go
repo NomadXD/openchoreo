@@ -62,6 +62,11 @@ const (
 	// LabelKeySourceEndpoint names the workload endpoint of the source component
 	// an Endpoint was created for.
 	LabelKeySourceEndpoint = "openchoreo.dev/source-endpoint"
+	// LabelKeySourceReleaseLine names the release line of the source component
+	// an Endpoint was created for. While every backend of the Endpoint is that
+	// component, the Endpoint controller makes the ReleaseLine its owner, so
+	// deleting the line deletes the Endpoint. Absent for the main line.
+	LabelKeySourceReleaseLine = "openchoreo.dev/source-release-line"
 
 	// LabelKeyCreatedBy identifies which controller initially created a resource (audit trail).
 	// Example: A namespace created by renderedrelease-controller would have created-by=renderedrelease-controller.

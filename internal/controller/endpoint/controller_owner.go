@@ -19,12 +19,14 @@ import (
 	"github.com/openchoreo/openchoreo/internal/labels"
 )
 
-// ensureOwnerReference keeps exactly one Component or Project owner reference
-// on the Endpoint so Kubernetes garbage collection removes it with its owner.
+// ensureOwnerReference keeps exactly one ReleaseLine, Component or Project
+// owner reference on the Endpoint so Kubernetes garbage collection removes it
+// with its owner.
 //
 // An Endpoint labeled with a source component whose backends are all that
 // component belongs to the component: deleting the component deletes the
-// Endpoint. Every other Endpoint — hand-authored from a project, or a generated
+// Endpoint. One also labeled with a source release line belongs to that line
+// of the component instead, so deleting the line deletes it. Every other Endpoint — hand-authored from a project, or a generated
 // one later edited to route to another component — belongs to the Project, so
 // deleting one backend's component never takes down a route still serving the
 // others. The rule is a pure function of the spec and labels rather than a
@@ -68,30 +70,47 @@ func (r *Reconciler) ensureOwnerReference(ctx context.Context, ep *openchoreov1a
 	return true, nil
 }
 
-// desiredOwner returns the Component or Project that should own ep, or nil to
-// leave its owner references untouched.
+// desiredOwner returns the ReleaseLine, Component or Project that should own
+// ep, or nil to leave its owner references untouched.
 //
-// A source component that is going away, or already gone while the Endpoint
-// still names it as owner, returns nil so garbage collection can finish
-// deleting the Endpoint instead of this controller rescuing it into the
-// project. A source component that does not exist yet (GitOps applying the
-// Endpoint first) falls back to the project; the Workload watch re-enqueues the
-// Endpoint once the component lands and ownership moves to it.
+// A source release line or component that is going away, or already gone
+// while the Endpoint still names it as owner, returns nil so garbage
+// collection can finish deleting the Endpoint instead of this controller
+// rescuing it into the project. One that does not exist yet (GitOps applying
+// the Endpoint first) falls back to the project; the ReleaseLine and Workload
+// watches re-enqueue the Endpoint once it lands and ownership moves to it.
 func (r *Reconciler) desiredOwner(ctx context.Context, ep *openchoreov1alpha1.Endpoint) (client.Object, error) {
 	if name := ep.Labels[labels.LabelKeySourceComponent]; name != "" && routesOnlyTo(ep, name) {
-		comp := &openchoreov1alpha1.Component{}
-		err := r.Get(ctx, types.NamespacedName{Namespace: ep.Namespace, Name: name}, comp)
-		switch {
-		case apierrors.IsNotFound(err):
-			if ownedByComponent(ep, name) {
+		if line := ep.Labels[labels.LabelKeySourceReleaseLine]; line != "" {
+			rl := &openchoreov1alpha1.ReleaseLine{}
+			err := r.Get(ctx, types.NamespacedName{Namespace: ep.Namespace, Name: line}, rl)
+			switch {
+			case apierrors.IsNotFound(err):
+				if ownedBy(ep, "ReleaseLine", line) {
+					return nil, nil
+				}
+			case err != nil:
+				return nil, fmt.Errorf("get ReleaseLine %q: %w", line, err)
+			case !rl.DeletionTimestamp.IsZero():
 				return nil, nil
+			case rl.Spec.Owner.ProjectName == ep.Spec.Owner.ProjectName && rl.Spec.Owner.ComponentName == name:
+				return withGVK(rl, "ReleaseLine"), nil
 			}
-		case err != nil:
-			return nil, fmt.Errorf("get Component %q: %w", name, err)
-		case !comp.DeletionTimestamp.IsZero():
-			return nil, nil
-		case comp.Spec.Owner.ProjectName == ep.Spec.Owner.ProjectName:
-			return withGVK(comp, "Component"), nil
+		} else {
+			comp := &openchoreov1alpha1.Component{}
+			err := r.Get(ctx, types.NamespacedName{Namespace: ep.Namespace, Name: name}, comp)
+			switch {
+			case apierrors.IsNotFound(err):
+				if ownedBy(ep, "Component", name) {
+					return nil, nil
+				}
+			case err != nil:
+				return nil, fmt.Errorf("get Component %q: %w", name, err)
+			case !comp.DeletionTimestamp.IsZero():
+				return nil, nil
+			case comp.Spec.Owner.ProjectName == ep.Spec.Owner.ProjectName:
+				return withGVK(comp, "Component"), nil
+			}
 		}
 	}
 
@@ -121,11 +140,11 @@ func routesOnlyTo(ep *openchoreov1alpha1.Endpoint, component string) bool {
 	return true
 }
 
-// ownedByComponent reports whether ep carries an owner reference to the named
-// Component.
-func ownedByComponent(ep *openchoreov1alpha1.Endpoint, name string) bool {
+// ownedBy reports whether ep carries an owner reference to the named object of
+// a kind this controller manages ownership of.
+func ownedBy(ep *openchoreov1alpha1.Endpoint, kind, name string) bool {
 	for _, ref := range ep.OwnerReferences {
-		if isManagedOwnerKind(ref) && ref.Kind == "Component" && ref.Name == name {
+		if isManagedOwnerKind(ref) && ref.Kind == kind && ref.Name == name {
 			return true
 		}
 	}
@@ -139,7 +158,7 @@ func isManagedOwnerKind(ref metav1.OwnerReference) bool {
 	if err != nil || gv.Group != openchoreov1alpha1.GroupVersion.Group {
 		return false
 	}
-	return ref.Kind == "Component" || ref.Kind == "Project"
+	return ref.Kind == "ReleaseLine" || ref.Kind == "Component" || ref.Kind == "Project"
 }
 
 // withGVK stamps the GroupVersionKind on an object read through the typed

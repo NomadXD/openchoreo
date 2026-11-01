@@ -97,6 +97,15 @@ func (r *Reconciler) listEndpointsForWorkload(ctx context.Context, obj client.Ob
 	return r.requestsForIndex(ctx, backendComponentIndex, indexKey, client.InNamespace(w.Namespace))
 }
 
+// listEndpointsForReleaseLine returns reconcile requests for Endpoints in the
+// ReleaseLine's namespace that route to its component, so an Endpoint created
+// for the line moves to it once the line lands.
+func (r *Reconciler) listEndpointsForReleaseLine(ctx context.Context, obj client.Object) []reconcile.Request {
+	rl := obj.(*openchoreov1alpha1.ReleaseLine)
+	indexKey := backendComponentKey(rl.Spec.Owner.ProjectName, rl.Spec.Owner.ComponentName)
+	return r.requestsForIndex(ctx, backendComponentIndex, indexKey, client.InNamespace(rl.Namespace))
+}
+
 // requestsForIndex lists Endpoints by the given field index and converts them
 // to reconcile.Requests. Extra ListOptions (e.g. client.InNamespace) scope the
 // lookup further.

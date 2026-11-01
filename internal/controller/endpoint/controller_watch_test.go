@@ -84,4 +84,15 @@ var _ = Describe("Watch mappers", func() {
 		w.Namespace = "ns1"
 		Expect(r.listEndpointsForWorkload(watchCtx, w)).To(ConsistOf(request("ns1", "routes")))
 	})
+
+	It("maps a ReleaseLine to the Endpoints routing to its component in the same project", func() {
+		r := buildReconciler(
+			inNamespace(newEndpoint("routes", "p", clusterTypeRef("t"), componentBackend("s", "greeter", "http", 1)), "ns1"),
+			inNamespace(newEndpoint("other-ns", "p", clusterTypeRef("t"), componentBackend("s", "greeter", "http", 1)), "ns2"),
+			inNamespace(newEndpoint("other-component", "p", clusterTypeRef("t"), componentBackend("s", "billing", "http", 1)), "ns1"),
+		)
+		rl := newReleaseLine("p", "greeter", "next")
+		rl.Namespace = "ns1"
+		Expect(r.listEndpointsForReleaseLine(watchCtx, rl)).To(ConsistOf(request("ns1", "routes")))
+	})
 })

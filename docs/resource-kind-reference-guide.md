@@ -504,6 +504,13 @@ example `includeWhen: '${"internal" in visibility && ...}'`) and rejects any it 
 through its `validations`. A PE opting a type in should drop the type's own route resources for
 the matched endpoints, otherwise both the type's route and the Endpoint's route render.
 
+An `Endpoint` created for one of the component's release lines also carries
+`openchoreo.dev/source-release-line`, and its backends name the line in
+`component.releaseLine`. The Endpoint controller makes the labeled ReleaseLine its owner while
+every backend routes to the component, so deleting the line deletes its Endpoints; without the
+label the Component owns it, and an `Endpoint` routing to any other component belongs to its
+Project.
+
 **ResourceTemplate Fields:**
 
 | Field | Type | Required | Description |
