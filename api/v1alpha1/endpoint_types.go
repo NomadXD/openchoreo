@@ -182,9 +182,9 @@ type LatestEndpointRelease struct {
 
 // Endpoint is the Schema for the endpoints API.
 // An Endpoint routes traffic across one or more backends using weights,
-// rendered through an EndpointType or ClusterEndpointType. It is concerned with
-// traffic routing only; the compute side (ports, network policies) stays on
-// Workload.spec.endpoints.
+// rendered through an EndpointType or ClusterEndpointType. The compute side
+// (ports, protocols) stays on Workload.spec.endpoints; the network policy that
+// admits the Endpoint's visibility to each backend ships with its routes.
 // The plural "endpoints" and the short name "ep" are taken by core v1 Endpoints
 // in kubectl, so this kind has no short name; use "endpoints.openchoreo.dev".
 type Endpoint struct {
