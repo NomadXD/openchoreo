@@ -24,6 +24,28 @@ func newComponent(project, name string) *openchoreov1alpha1.Component {
 	}
 }
 
+func newReleaseLine(project, component, line string) *openchoreov1alpha1.ReleaseLine {
+	return &openchoreov1alpha1.ReleaseLine{
+		ObjectMeta: metav1.ObjectMeta{Name: line, Namespace: "default"},
+		Spec: openchoreov1alpha1.ReleaseLineSpec{
+			Owner: openchoreov1alpha1.ReleaseLineOwner{ProjectName: project, ComponentName: component},
+		},
+	}
+}
+
+// lineEndpoint returns an Endpoint created for the component's release line:
+// labeled with both, routing to the line.
+func lineEndpoint(name, project, component, line string) *openchoreov1alpha1.Endpoint {
+	backend := componentBackend(line, component, "http", 1)
+	backend.Component.ReleaseLine = line
+	ep := newEndpoint(name, project, clusterTypeRef("cet-own"), backend)
+	ep.Labels = map[string]string{
+		labels.LabelKeySourceComponent:   component,
+		labels.LabelKeySourceReleaseLine: line,
+	}
+	return ep
+}
+
 var _ = Describe("Endpoint ownership", func() {
 	var reconciler *Reconciler
 
@@ -122,5 +144,65 @@ var _ = Describe("Endpoint ownership", func() {
 		}).Should(BeTrue())
 
 		expectSoleOwner(reconcileOwners(ep), "Component", comp)
+	})
+
+	Context("release lines", func() {
+		It("makes the source release line the owner of an Endpoint created for it", func() {
+			project, comp := newProject("p-own-line"), newComponent("p-own-line", "greeter")
+			rl := newReleaseLine(project.Name, comp.Name, "own-line")
+			ep := lineEndpoint("ep-own-line", project.Name, comp.Name, rl.Name)
+			create(project, comp, rl, ep)
+
+			expectSoleOwner(reconcileOwners(ep), "ReleaseLine", rl)
+		})
+
+		It("keeps a main-line Endpoint with a canary backend on a line with the component", func() {
+			project, comp := newProject("p-own-canary"), newComponent("p-own-canary", "greeter")
+			canary := componentBackend("canary", comp.Name, "http", 1)
+			canary.Component.ReleaseLine = "canary-line"
+			ep := newEndpoint("ep-own-canary", project.Name, clusterTypeRef("cet-own"),
+				componentBackend("greeter", comp.Name, "http", 9), canary)
+			ep.Labels = map[string]string{labels.LabelKeySourceComponent: comp.Name}
+			create(project, comp, ep)
+
+			expectSoleOwner(reconcileOwners(ep), "Component", comp)
+		})
+
+		It("falls back to the project until the release line exists, then moves to it", func() {
+			project, comp := newProject("p-own-line-late"), newComponent("p-own-line-late", "greeter")
+			ep := lineEndpoint("ep-own-line-late", project.Name, comp.Name, "late-line")
+			create(project, comp, ep)
+
+			expectSoleOwner(reconcileOwners(ep), "Project", project)
+
+			rl := newReleaseLine(project.Name, comp.Name, "late-line")
+			create(rl)
+			expectSoleOwner(reconcileOwners(ep), "ReleaseLine", rl)
+		})
+
+		It("gives an Endpoint labeled with another component's release line to its project", func() {
+			project := newProject("p-own-line-other")
+			comp, other := newComponent(project.Name, "greeter"), newComponent(project.Name, "billing")
+			rl := newReleaseLine(project.Name, other.Name, "other-line")
+			ep := lineEndpoint("ep-own-line-other", project.Name, comp.Name, rl.Name)
+			create(project, comp, other, rl, ep)
+
+			expectSoleOwner(reconcileOwners(ep), "Project", project)
+		})
+
+		It("leaves a line-owned Endpoint to garbage collection once the line is gone", func() {
+			project, comp := newProject("p-own-line-gone"), newComponent("p-own-line-gone", "greeter")
+			rl := newReleaseLine(project.Name, comp.Name, "gone-line")
+			ep := lineEndpoint("ep-own-line-gone", project.Name, comp.Name, rl.Name)
+			create(project, comp, rl, ep)
+			expectSoleOwner(reconcileOwners(ep), "ReleaseLine", rl)
+
+			Expect(k8sClient.Delete(ctx, rl)).To(Succeed())
+			Eventually(func() bool {
+				return k8sClient.Get(ctx, client.ObjectKeyFromObject(rl), &openchoreov1alpha1.ReleaseLine{}) != nil
+			}).Should(BeTrue())
+
+			expectSoleOwner(reconcileOwners(ep), "ReleaseLine", rl)
+		})
 	})
 })
