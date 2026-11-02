@@ -1,0 +1,20 @@
+# Step 4: green has held. Retire blue: the Endpoint now has only green, and
+# the preview match is gone. Clear the binding's backendOverrides first; an
+# override must name a backend of the release it is pinned to.
+apiVersion: openchoreo.dev/v1alpha1
+kind: Endpoint
+metadata:
+  name: checkout
+  namespace: default
+spec:
+  owner:
+    projectName: default
+  type:
+    kind: ClusterEndpointType
+    name: http-progressive
+  visibility: [external]
+  autoDeploy: true
+  parameters:
+    pathPrefix: /checkout
+  backendRefs:
+    - { name: checkout-green, component: { name: checkout-green, endpoint: http }, weight: 100 }

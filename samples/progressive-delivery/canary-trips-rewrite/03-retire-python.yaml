@@ -1,0 +1,23 @@
+# Step 3: the rewrite took all the traffic and held it. Drop the Python
+# backend from the Endpoint (a new release), then delete the component. First
+# leave only trips-go in the binding's backendOverrides: an override must name
+# a backend of the release it is pinned to.
+apiVersion: openchoreo.dev/v1alpha1
+kind: Endpoint
+metadata:
+  name: trips-api
+  namespace: default
+spec:
+  owner:
+    projectName: default
+  type:
+    kind: ClusterEndpointType
+    name: http-progressive
+  visibility: [external]
+  autoDeploy: true
+  parameters:
+    pathPrefix: /trips
+  backendRefs:
+    - name: trips-go
+      component: { name: trips-go, endpoint: http }
+      weight: 100

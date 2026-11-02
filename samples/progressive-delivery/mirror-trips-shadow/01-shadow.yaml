@@ -1,0 +1,28 @@
+# Step 1: riders all get trips-python. trips-go sits at weight 0 with a
+# mirror: the gateway copies 10% of requests to it and throws its answers
+# away, so the rewrite sees real traffic before any rider sees the rewrite.
+# A mirror needs weight 0 and no match: a backend either serves requests or
+# receives copies, never both.
+apiVersion: openchoreo.dev/v1alpha1
+kind: Endpoint
+metadata:
+  name: trips-api
+  namespace: default
+spec:
+  owner:
+    projectName: default
+  type:
+    kind: ClusterEndpointType
+    name: http-progressive
+  visibility: [external]
+  autoDeploy: true
+  parameters:
+    pathPrefix: /trips
+  backendRefs:
+    - name: trips-python
+      component: { name: trips-python, endpoint: http }
+      weight: 100
+    - name: trips-go
+      component: { name: trips-go, endpoint: http }
+      weight: 0
+      mirror: { percent: 10 }

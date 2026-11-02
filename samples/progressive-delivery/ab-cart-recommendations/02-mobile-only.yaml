@@ -1,0 +1,26 @@
+# Step 2 (optional): only mobile shoppers take part. Group b on a phone gets
+# recommendations; group b on a desktop, and group a, get the plain cart. The
+# conditions of a match must all hold: the cookie AND a mobile User-Agent.
+apiVersion: openchoreo.dev/v1alpha1
+kind: Endpoint
+metadata:
+  name: cart
+  namespace: default
+spec:
+  owner:
+    projectName: default
+  type:
+    kind: ClusterEndpointType
+    name: http-progressive
+  visibility: [external]
+  autoDeploy: true
+  parameters:
+    pathPrefix: /shop
+  backendRefs:
+    - { name: storefront, component: { name: storefront, endpoint: http }, weight: 100 }
+    - name: storefront-recs
+      component: { name: storefront-recs, endpoint: http }
+      weight: 0
+      match:
+        cookies: [{ name: exp_cartrecs, value: b }]
+        headers: [{ name: user-agent, type: RegularExpression, value: ".*Mobi.*" }]

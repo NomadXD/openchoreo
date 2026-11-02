@@ -1,0 +1,69 @@
+# The same two Components as ../canary-trips-rewrite/components.yaml: the
+# shadow demo hands over to the canary demo, so both use one copy of each.
+apiVersion: openchoreo.dev/v1alpha1
+kind: Component
+metadata:
+  name: trips-python
+  namespace: default
+spec:
+  owner:
+    projectName: default
+  autoDeploy: true
+  componentType:
+    kind: ClusterComponentType
+    name: deployment/service
+---
+apiVersion: openchoreo.dev/v1alpha1
+kind: Workload
+metadata:
+  name: trips-python-workload
+  namespace: default
+spec:
+  owner:
+    projectName: default
+    componentName: trips-python
+  endpoints:
+    http:
+      type: HTTP
+      port: 8080
+  container:
+    image: openchoreo-demo/trips-python:local
+    env:
+      - key: APP_NAME
+        value: trips-python
+---
+apiVersion: openchoreo.dev/v1alpha1
+kind: Component
+metadata:
+  name: trips-go
+  namespace: default
+spec:
+  owner:
+    projectName: default
+  autoDeploy: true
+  componentType:
+    kind: ClusterComponentType
+    name: deployment/service
+---
+apiVersion: openchoreo.dev/v1alpha1
+kind: Workload
+metadata:
+  name: trips-go-workload
+  namespace: default
+spec:
+  owner:
+    projectName: default
+    componentName: trips-go
+  endpoints:
+    http:
+      type: HTTP
+      port: 8080
+  container:
+    image: openchoreo-demo/demo-go:local
+    env:
+      - key: MODE
+        value: trips
+      - key: APP_NAME
+        value: trips-go
+      - key: FAIL_RATE
+        value: "0"

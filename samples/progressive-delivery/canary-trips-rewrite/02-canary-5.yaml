@@ -1,0 +1,14 @@
+# Step 2: send 5% to the Go rewrite in development. This edits the binding,
+# not the Endpoint, so no new release is cut; production keeps its own split.
+# demo.sh applies the same change with kubectl patch, then 25, 50 and 100.
+apiVersion: openchoreo.dev/v1alpha1
+kind: EndpointReleaseBinding
+metadata:
+  name: trips-api-development
+  namespace: default
+spec:
+  owner: { projectName: default, endpointName: trips-api }
+  environment: development
+  backendOverrides:
+    - { name: trips-python, weight: 95 }
+    - { name: trips-go, weight: 5 }

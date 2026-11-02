@@ -1,0 +1,25 @@
+# Step 1: the experiment. Visitors whose exp_cartrecs cookie says b get the
+# cart with recommendations; everyone else gets the cart as it is. The
+# storefront assigns the cookie once, 50/50, so a visitor never switches.
+apiVersion: openchoreo.dev/v1alpha1
+kind: Endpoint
+metadata:
+  name: cart
+  namespace: default
+spec:
+  owner:
+    projectName: default
+  type:
+    kind: ClusterEndpointType
+    name: http-progressive
+  visibility: [external]
+  autoDeploy: true
+  parameters:
+    pathPrefix: /shop
+  backendRefs:
+    - { name: storefront, component: { name: storefront, endpoint: http }, weight: 100 }
+    - name: storefront-recs
+      component: { name: storefront-recs, endpoint: http }
+      weight: 0
+      match:
+        cookies: [{ name: exp_cartrecs, value: b }]

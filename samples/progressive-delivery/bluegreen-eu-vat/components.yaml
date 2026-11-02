@@ -1,0 +1,78 @@
+# Blue charges VAT at the shop's own rate (the rules until 30 June 2021);
+# green charges the buyer's country rate (the EU One-Stop Shop rules from
+# 1 July 2021). Same code, different TAX_MODE.
+apiVersion: openchoreo.dev/v1alpha1
+kind: Component
+metadata:
+  name: checkout-blue
+  namespace: default
+spec:
+  owner:
+    projectName: default
+  autoDeploy: true
+  componentType:
+    kind: ClusterComponentType
+    name: deployment/service
+---
+apiVersion: openchoreo.dev/v1alpha1
+kind: Workload
+metadata:
+  name: checkout-blue-workload
+  namespace: default
+spec:
+  owner:
+    projectName: default
+    componentName: checkout-blue
+  endpoints:
+    http:
+      type: HTTP
+      port: 8080
+  container:
+    image: openchoreo-demo/demo-go:local
+    env:
+      - key: MODE
+        value: checkout
+      - key: APP_NAME
+        value: checkout-blue
+      - key: TAX_MODE
+        value: seller
+      - key: COLOR
+        value: blue
+---
+apiVersion: openchoreo.dev/v1alpha1
+kind: Component
+metadata:
+  name: checkout-green
+  namespace: default
+spec:
+  owner:
+    projectName: default
+  autoDeploy: true
+  componentType:
+    kind: ClusterComponentType
+    name: deployment/service
+---
+apiVersion: openchoreo.dev/v1alpha1
+kind: Workload
+metadata:
+  name: checkout-green-workload
+  namespace: default
+spec:
+  owner:
+    projectName: default
+    componentName: checkout-green
+  endpoints:
+    http:
+      type: HTTP
+      port: 8080
+  container:
+    image: openchoreo-demo/demo-go:local
+    env:
+      - key: MODE
+        value: checkout
+      - key: APP_NAME
+        value: checkout-green
+      - key: TAX_MODE
+        value: buyer
+      - key: COLOR
+        value: green

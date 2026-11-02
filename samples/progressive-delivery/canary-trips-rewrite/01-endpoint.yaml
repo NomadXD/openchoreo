@@ -1,0 +1,29 @@
+# One Endpoint for the trips API. The Go rewrite is staged at weight 0: it is
+# deployed and resolved, but riders get nothing from it yet. Testers who send
+# x-canary: true reach it already: a match sends every request that meets it
+# to its backend, whatever the weights. autoDeploy binds every release to the
+# first environment (development).
+apiVersion: openchoreo.dev/v1alpha1
+kind: Endpoint
+metadata:
+  name: trips-api
+  namespace: default
+spec:
+  owner:
+    projectName: default
+  type:
+    kind: ClusterEndpointType
+    name: http-progressive
+  visibility: [external]
+  autoDeploy: true
+  parameters:
+    pathPrefix: /trips
+  backendRefs:
+    - name: trips-python
+      component: { name: trips-python, endpoint: http }
+      weight: 100
+    - name: trips-go
+      component: { name: trips-go, endpoint: http }
+      weight: 0
+      match:
+        headers: [{ name: x-canary, value: "true" }]

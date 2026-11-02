@@ -1,0 +1,28 @@
+# Step 1b (optional): the same preview by path instead of a header, for
+# testers who can't set one (a browser, a partner's QA). Requests under
+# /checkout/next go to green; the match's path is relative to the Endpoint's
+# /checkout, and green sees /next. Everyone else stays on blue. A match's
+# conditions must all hold, so this replaces the header preview rather than
+# adding to it.
+apiVersion: openchoreo.dev/v1alpha1
+kind: Endpoint
+metadata:
+  name: checkout
+  namespace: default
+spec:
+  owner:
+    projectName: default
+  type:
+    kind: ClusterEndpointType
+    name: http-progressive
+  visibility: [external]
+  autoDeploy: true
+  parameters:
+    pathPrefix: /checkout
+  backendRefs:
+    - { name: checkout-blue, component: { name: checkout-blue, endpoint: http }, weight: 100 }
+    - name: checkout-green
+      component: { name: checkout-green, endpoint: http }
+      weight: 0
+      match:
+        path: { type: PathPrefix, value: /next }
