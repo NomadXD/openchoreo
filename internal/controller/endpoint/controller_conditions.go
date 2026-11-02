@@ -39,6 +39,10 @@ const (
 	// Workload, or a workload endpoint the component's Workload does not declare.
 	ReasonBackendNotFound controller.ConditionReason = "BackendNotFound"
 
+	// ReasonInvalidMatch indicates a backendRef's match is one the data planes
+	// cannot all express the same way.
+	ReasonInvalidMatch controller.ConditionReason = "InvalidMatch"
+
 	// ReasonAutoDeployFailed indicates spec.autoDeploy is set but the first
 	// environment could not be resolved from the project's deployment pipeline.
 	// The EndpointRelease is still cut; only the automatic deployment is blocked.
