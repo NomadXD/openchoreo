@@ -18,13 +18,13 @@ run kubectl apply -f components.yaml
 run kubectl apply -f 01-shadow.yaml
 wait_ready trips-api
 both trips-api ""
-say "Every answer comes from trips-python. The copies don't show here; the binding shows the share being copied:"
-show_mirror trips-api trips-go
+say "Every answer comes from trips-python. The copies don't show here; trips-go counts the copies it receives:"
+mirror_count trips-api trips-go
 pause
 
 bold "2. Copy every request in development"
 set_mirror trips-api trips-go=100
-show_mirror trips-api trips-go
+mirror_count trips-api trips-go
 say "Releases: $(release_count trips-api). The share was a binding edit, not a new release."
 pause
 

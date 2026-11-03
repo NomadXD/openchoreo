@@ -34,6 +34,9 @@ EndpointTypes that render the backends' matches and mirrors.
     visibility, used by the demos.
   - [`endpoint-types/istio-virtualservice.yaml`](endpoint-types/istio-virtualservice.yaml):
     the same rules for in-cluster callers through an Istio sidecar mesh.
+- **No downtime.** A candidate starts at weight 0, so it gets traffic only
+  when you raise its share. Overrides for a backend a release removed are
+  ignored, so the release promotes as is.
 - **`autoDeploy`.** The Endpoint controller binds each new release to the
   first environment of the project's deployment pipeline.
 
@@ -50,10 +53,14 @@ make -C samples/progressive-delivery clean
 ```
 
 Each `demo.sh` narrates and pauses between steps; `AUTO=1` runs it straight
-through. `REQUESTS` sets how many requests each tally sends (default 100).
+through. `MESH=1` also tallies calls from a pod in the cluster to the stable
+component's own address; it needs Istio with sidecars and the
+[`istio-virtualservice`](endpoint-types/istio-virtualservice.yaml) type on the
+Endpoint. `REQUESTS` sets how many requests each tally sends (default 100).
 `OPTIONAL_PATH=1` adds the blue/green preview by path.
 
 The apps are deliberately tiny. [`apps/trips-python`](apps/trips-python) is the
 original trips service. [`apps/demo-go`](apps/demo-go) serves the Go rewrite,
 the checkout and the storefront, chosen by `MODE`. Every response names its
-backend in the `X-Served-By` header, which the tallies count.
+backend in the `X-Served-By` header, which the tallies count, and `demo-go`
+counts the requests and mirrored copies it receives on `/stats`.

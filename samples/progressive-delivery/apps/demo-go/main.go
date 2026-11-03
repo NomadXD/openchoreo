@@ -9,7 +9,9 @@
 //     buyer's country rate (blue/green demo).
 //   - storefront: the cart page, with or without recommendations (A/B demo).
 //
-// Every response says who answered in the X-Served-By header.
+// Every response says who answered in the X-Served-By header. GET /stats
+// reports how many requests the app served and how many of them were mirrored
+// copies, which the caller never sees.
 package main
 
 import (
@@ -21,13 +23,34 @@ import (
 	"os"
 	"strconv"
 	"strings"
+	"sync/atomic"
 	"time"
 )
 
 var (
 	name = env("APP_NAME", "demo-go")
 	mode = env("MODE", "trips")
+
+	// served counts requests to the app; copies counts the ones that were
+	// mirrored to it.
+	served, copies atomic.Int64
 )
+
+// counted counts each request, and as a copy when the Host carries the
+// -shadow suffix Envoy-based gateways and meshes add to mirrored requests.
+func counted(next http.HandlerFunc) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		served.Add(1)
+		host := r.Host
+		if h, _, ok := strings.Cut(host, ":"); ok {
+			host = h
+		}
+		if strings.HasSuffix(host, "-shadow") {
+			copies.Add(1)
+		}
+		next(w, r)
+	}
+}
 
 func env(key, def string) string {
 	if v := os.Getenv(key); v != "" {
@@ -47,13 +70,16 @@ func envFloat(key string, def float64) float64 {
 func main() {
 	mux := http.NewServeMux()
 	mux.HandleFunc("/healthz", func(w http.ResponseWriter, _ *http.Request) { writeJSON(w, 200, map[string]any{"ok": true}) })
+	mux.HandleFunc("/stats", func(w http.ResponseWriter, _ *http.Request) {
+		writeJSON(w, 200, map[string]any{"requests": served.Load(), "copies": copies.Load()})
+	})
 	switch mode {
 	case "trips":
-		mux.HandleFunc("/", trips)
+		mux.HandleFunc("/", counted(trips))
 	case "checkout":
-		mux.HandleFunc("/", checkout)
+		mux.HandleFunc("/", counted(checkout))
 	case "storefront":
-		mux.HandleFunc("/", storefront)
+		mux.HandleFunc("/", counted(storefront))
 	default:
 		log.Fatalf("unknown MODE %q", mode)
 	}

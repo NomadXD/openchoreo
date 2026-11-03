@@ -27,7 +27,9 @@ for w in 5 25 50; do
   bold "2. Canary at ${w}%"
   set_weights trips-api trips-python=$((100 - w)) trips-go=$w
   both trips-api ""
-  say "Same split from the gateway and from inside the cluster: one Endpoint, one split."
+  if [[ "${MESH:-0}" == "1" ]]; then
+    say "Same split from the gateway and from inside the cluster: one Endpoint, one split."
+  fi
   say "Releases cut so far: $(release_count trips-api) (a weight change is not a release)"
   pause
 done
@@ -54,10 +56,12 @@ set_weights trips-api trips-python=0 trips-go=100
 both trips-api ""
 pause
 
-bold "5. Retire Python"
-set_weights trips-api trips-go=100
+bold "5. Retire Python, in an order that never drops a request"
+say "trips-go has 100%. Remove trips-python from the Endpoint first (a new release); its leftover override is ignored."
 run kubectl apply -f 03-retire-python.yaml
 wait_ready trips-api
-run kubectl delete component trips-python -n "$NS"
 both trips-api ""
+say "In-cluster callers that call trips-python's own address move to trips-go now."
+say "Once trips-python receives no requests, it can go:"
+run kubectl delete component trips-python -n "$NS"
 say "Done: the rewrite serves every rider, and no request saw downtime."

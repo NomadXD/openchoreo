@@ -25,7 +25,7 @@ against the current version ([Canarying releases](https://sre.google/workbook/ca
 | 2. Canary: 5, 25, 50% ([`02-canary-5.yaml`](02-canary-5.yaml)) | The binding's `backendOverrides` | The share moves and the release count stays the same |
 | 3. Fault | `trips-go` fails 30% of requests | Errors only on the canary's share; one edit puts it back to 0, and testers still reach the rewrite |
 | 4. Fix forward, 100% | `trips-go` fixed, then at 100 | All traffic on Go |
-| 5. [`03-retire-python.yaml`](03-retire-python.yaml) | Python dropped from the Endpoint, component deleted | No downtime at any point |
+| 5. [`03-retire-python.yaml`](03-retire-python.yaml) | Python is dropped from the Endpoint, then the component is deleted | No downtime at any point |
 
 ## What to point out
 
@@ -35,6 +35,17 @@ against the current version ([Canarying releases](https://sre.google/workbook/ca
   a rollback.
 - Changing weights edits the binding for one environment. Production keeps its
   own split, and no release is cut.
+
+## Retiring the old component
+
+This demo replaces one component with another, so the old one has to be retired in order:
+
+1. Give the new backend all the traffic in every environment.
+2. Remove the old backend from the Endpoint. That cuts a release; promote it. Outside callers keep the Endpoint's URL, and overrides that still name the old backend are ignored.
+3. Move in-cluster callers that call the old component's own address to the new one. With a mesh they are already served by the new one through the old address.
+4. Delete the old component once it receives no requests, and only after the Endpoint no longer lists it.
+
+A new build of the same service doesn't need any of this: run it as a release line of the same component, and its address never changes.
 
 ## References
 

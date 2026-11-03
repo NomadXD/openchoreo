@@ -149,14 +149,56 @@ tally() {
   done | sort | uniq -c | awk '{printf "    %4d  %-18s HTTP %s\n", $1, $2, $3}'
 }
 
-# both tallies the gateway path. SUFFIX is appended to the URL (for example
-# "/?country=DE"); curl arguments follow it.
+# stable_url prints the in-cluster address of the Endpoint's first backend,
+# the stable component's own Service. In-cluster callers keep calling it; a
+# mesh route on it applies the Endpoint's split.
+stable_url() {
+  local url
+  url="$(kubectl get endpointreleasebinding "$(binding "$1")" -n "$NS" \
+    -o jsonpath='{.status.backends[0].serviceURL.scheme}://{.status.backends[0].serviceURL.host}:{.status.backends[0].serviceURL.port}')"
+  echo "${url%/}"
+}
+
+# ensure_client starts a curl pod in the data-plane namespace, for in-cluster
+# calls. The namespace's mesh enrolment applies to it.
+ensure_client() {
+  local dpns="$1"
+  if ! kubectl get pod pd-client -n "$dpns" >/dev/null 2>&1; then
+    kubectl run pd-client -n "$dpns" --image=curlimages/curl:8.11.1 --restart=Never --command -- sleep infinity >/dev/null
+  fi
+  kubectl wait pod/pd-client -n "$dpns" --for=condition=Ready --timeout=120s >/dev/null
+}
+
+# tally_mesh does what tally does from a pod in the cluster, calling the
+# stable component's own address. It needs a mesh EndpointType such as
+# endpoint-types/istio-virtualservice.yaml for the split to apply.
+tally_mesh() {
+  local ep="$1" suffix="$2" dpns url args=""
+  shift 2
+  if [[ $# -gt 0 ]]; then args="$(printf '%q ' "$@")"; fi
+  dpns="$(dp_namespace "$ep")"
+  url="$(stable_url "$ep")$suffix"
+  ensure_client "$dpns"
+  kubectl exec -n "$dpns" pd-client -- sh -c "
+    for i in \$(seq 1 $REQUESTS); do
+      curl -s -o /dev/null -D - $args '$url' | tr -d '\r' |
+        awk 'NR==1{code=\$2} tolower(\$1)==\"x-served-by:\"{who=\$2} END{print (who==\"\"?\"-\":who), code}'
+    done" | sort | uniq -c | awk '{printf "    %4d  %-18s HTTP %s\n", $1, $2, $3}'
+}
+
+# both tallies the gateway path, and with MESH=1 the in-cluster path too.
+# SUFFIX is appended to the URL (for example "/?country=DE"); curl arguments
+# follow it.
 both() {
   local ep="$1" suffix="${2:-}" url
   shift 2 || shift $#
   url="$(invoke_url "$ep")$suffix"
   say "through the gateway ($url):"
   tally "$url" "$@"
+  if [[ "${MESH:-0}" == "1" ]]; then
+    say "from a pod in the cluster, calling $(stable_url "$ep")$suffix:"
+    tally_mesh "$ep" "$suffix" "$@"
+  fi
 }
 
 # set_mirror patches the binding's backendOverrides to copy a share of the
@@ -193,4 +235,28 @@ show_mirror() {
   local ep="$1" backend="$2"
   say "mirror share to $backend in $ENV_NAME: $(kubectl get endpointreleasebinding "$(binding "$ep")" -n "$NS" \
     -o jsonpath="{.status.backends[?(@.name==\"$backend\")].mirror.percent}")%"
+}
+
+# app_stats prints a backend component's request and copy counters, from one
+# of its pods (the demo apps serve them on /stats).
+app_stats() {
+  local ep="$1" component="$2" dpns pod
+  dpns="$(dp_namespace "$ep")"
+  pod="$(kubectl get pods -n "$dpns" -l "openchoreo.dev/component=$component" -o jsonpath='{.items[0].metadata.name}')"
+  kubectl exec -n "$dpns" "$pod" -- wget -qO- 127.0.0.1:8080/stats
+}
+
+# mirror_count sends REQUESTS requests through the gateway and counts how many
+# copies reached the mirrored component. A copy's answer never reaches the
+# caller, so the component counts them itself. Its pods share the count only
+# when it runs one replica, as the demos do.
+mirror_count() {
+  local ep="$1" component="$2" url before after
+  url="$(invoke_url "$ep")"
+  before="$(app_stats "$ep" "$component" | sed -E 's/.*"copies":([0-9]+).*/\1/')"
+  for _ in $(seq 1 "$REQUESTS"); do curl -s -o /dev/null "$url"; done
+  sleep 2
+  after="$(app_stats "$ep" "$component" | sed -E 's/.*"copies":([0-9]+).*/\1/')"
+  show_mirror "$ep" "$component"
+  say "copies that reached $component: $((after - before)) of $REQUESTS requests (counted by $component)"
 }
