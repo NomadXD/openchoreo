@@ -19,6 +19,10 @@ import (
 func generatedOperationDefs() []audit.OperationDef {
 	return []audit.OperationDef{
 		{
+			ID: "ApplyWorkload", Action: "apply_workload", ResourceType: "workload",
+			Category: audit.CategoryManagement, RESTResourceParam: "workloadName",
+		},
+		{
 			ID: "CreateClusterComponentType", Action: "create_cluster_component_type", ResourceType: "clustercomponenttype",
 			Category: audit.CategoryManagement,
 		},

@@ -8,6 +8,7 @@ import (
 	"io"
 	"os"
 	"path/filepath"
+	"regexp"
 	"time"
 
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
@@ -31,16 +32,67 @@ type WorkloadDescriptorMetadata struct {
 	Name string `yaml:"name"`
 }
 
+// Workload descriptor versions. The descriptor is versioned on its own: these name the
+// descriptor format, and the Workload CR it converts to stays openchoreo.dev/v1alpha1.
+const (
+	// DescriptorAPIVersionV1alpha1 is the original format. A descriptor with no apiVersion is
+	// read as this version.
+	DescriptorAPIVersionV1alpha1 = "openchoreo.dev/v1alpha1"
+	// DescriptorAPIVersionV1alpha2 is decoded strictly, requires protocol, and exposes
+	// endpoints through expose rather than visibility.
+	DescriptorAPIVersionV1alpha2 = "openchoreo.dev/v1alpha2"
+)
+
 type WorkloadDescriptorEndpoint struct {
-	Name        string   `yaml:"name"`
-	DisplayName string   `yaml:"displayName,omitempty"`
-	Port        int32    `yaml:"port"`
-	TargetPort  int32    `yaml:"targetPort,omitempty"`
-	Type        string   `yaml:"type"`
-	BasePath    string   `yaml:"basePath,omitempty"`
-	SchemaFile  string   `yaml:"schemaFile,omitempty"`
-	Context     string   `yaml:"context,omitempty"`
-	Visibility  []string `yaml:"visibility,omitempty"`
+	Name        string `yaml:"name"`
+	DisplayName string `yaml:"displayName,omitempty"`
+	Port        int32  `yaml:"port"`
+	TargetPort  int32  `yaml:"targetPort,omitempty"`
+	// Protocol is the protocol the endpoint serves. Required in v1alpha2.
+	Protocol string `yaml:"protocol,omitempty"`
+	// Type is the v1alpha1 name of Protocol. Deprecated in v1alpha1, rejected in v1alpha2.
+	Type       string `yaml:"type,omitempty"`
+	BasePath   string `yaml:"basePath,omitempty"`
+	SchemaFile string `yaml:"schemaFile,omitempty"`
+	Context    string `yaml:"context,omitempty"`
+	// Visibility writes the Workload's deprecated endpoint visibility. v1alpha1 only.
+	Visibility []string `yaml:"visibility,omitempty"`
+	// Expose requests one Endpoint per entry. v1alpha2 only.
+	Expose []WorkloadDescriptorExposure `yaml:"expose,omitempty"`
+}
+
+// WorkloadDescriptorExposure requests an Endpoint for a workload endpoint.
+type WorkloadDescriptorExposure struct {
+	// Name tells apart the Endpoints of one workload endpoint. At most one entry may omit it.
+	Name string `yaml:"name,omitempty"`
+	// Visibility is the Endpoint's visibility: namespace, internal and/or external.
+	Visibility []string `yaml:"visibility"`
+	// Via names an allowedEndpoints entry of the component's ComponentType. Empty selects the
+	// default entry for the endpoint's protocol.
+	Via string `yaml:"via,omitempty"`
+	// Parameters are the Endpoint's parameters, validated against the resolved EndpointType.
+	Parameters map[string]any `yaml:"parameters,omitempty"`
+}
+
+// WorkloadExposure is an exposure request read from a v1alpha2 descriptor, as sent to
+// openchoreo-api alongside the Workload. It is unresolved: the server maps Via to an
+// EndpointType through the component's ComponentType.
+type WorkloadExposure struct {
+	Endpoint   string         `json:"endpoint"`
+	Name       string         `json:"name,omitempty"`
+	Visibility []string       `json:"visibility"`
+	Via        string         `json:"via,omitempty"`
+	Parameters map[string]any `json:"parameters,omitempty"`
+}
+
+// DescriptorConversion is the result of converting a workload descriptor.
+type DescriptorConversion struct {
+	Workload *openchoreov1alpha1.Workload
+	// Exposures is nil for a v1alpha1 descriptor and non-nil, possibly empty, for v1alpha2:
+	// an empty list asks for every descriptor-managed Endpoint to be removed.
+	Exposures []WorkloadExposure
+	// Warnings report deprecated descriptor fields.
+	Warnings []string
 }
 
 // WorkloadDescriptorDependencies represents the dependencies section in workload.yaml
@@ -127,10 +179,25 @@ type ConversionParams struct {
 
 // ConvertWorkloadDescriptorToWorkloadCR converts a workload.yaml descriptor to a Workload CR
 func ConvertWorkloadDescriptorToWorkloadCR(descriptorPath string, params CreateWorkloadParams) (*openchoreov1alpha1.Workload, error) {
+	conversion, err := ConvertWorkloadDescriptor(descriptorPath, params)
+	if err != nil {
+		return nil, err
+	}
+	return conversion.Workload, nil
+}
+
+// ConvertWorkloadDescriptor converts a workload.yaml descriptor to a Workload CR and, for a
+// v1alpha2 descriptor, the Endpoints it asks for.
+func ConvertWorkloadDescriptor(descriptorPath string, params CreateWorkloadParams) (*DescriptorConversion, error) {
 	// Read the workload descriptor file
 	descriptor, err := readWorkloadDescriptor(descriptorPath)
 	if err != nil {
 		return nil, fmt.Errorf("failed to read workload descriptor: %w", err)
+	}
+
+	warnings, err := validateDescriptor(descriptor)
+	if err != nil {
+		return nil, fmt.Errorf("invalid workload descriptor: %w", err)
 	}
 
 	// Validate conversion parameters
@@ -144,7 +211,11 @@ func ConvertWorkloadDescriptorToWorkloadCR(descriptorPath string, params CreateW
 		return nil, fmt.Errorf("failed to convert descriptor to workload CR: %w", err)
 	}
 
-	return workload, nil
+	return &DescriptorConversion{
+		Workload:  workload,
+		Exposures: exposuresFromDescriptor(descriptor),
+		Warnings:  warnings,
+	}, nil
 }
 
 // readDescriptorFile reads relPath resolved against baseDir. It uses os.Root so a
@@ -187,17 +258,162 @@ func readWorkloadDescriptor(path string) (*WorkloadDescriptor, error) {
 	return readWorkloadDescriptorFromReader(file)
 }
 
+// readWorkloadDescriptorFromReader decodes a descriptor by its apiVersion. v1alpha1 is decoded
+// leniently, as it always was. v1alpha2 is decoded strictly, so a misspelled or unsupported key
+// fails rather than being dropped: a dropped expose would silently leave an endpoint unexposed
+// or exposed through the default EndpointType.
 func readWorkloadDescriptorFromReader(reader io.Reader) (*WorkloadDescriptor, error) {
-	var descriptor WorkloadDescriptor
 	data, err := io.ReadAll(reader)
 	if err != nil {
 		return nil, fmt.Errorf("failed to read data: %w", err)
 	}
-	if err := yaml.Unmarshal(data, &descriptor); err != nil {
+
+	var probe struct {
+		APIVersion string `json:"apiVersion"`
+	}
+	if err := yaml.Unmarshal(data, &probe); err != nil {
 		return nil, fmt.Errorf("failed to decode YAML: %w", err)
 	}
 
+	var descriptor WorkloadDescriptor
+	switch probe.APIVersion {
+	case "", DescriptorAPIVersionV1alpha1:
+		if err := yaml.Unmarshal(data, &descriptor); err != nil {
+			return nil, fmt.Errorf("failed to decode YAML: %w", err)
+		}
+	case DescriptorAPIVersionV1alpha2:
+		if err := yaml.UnmarshalStrict(data, &descriptor); err != nil {
+			return nil, fmt.Errorf("failed to decode %s descriptor: %w", DescriptorAPIVersionV1alpha2, err)
+		}
+	default:
+		return nil, fmt.Errorf("unsupported descriptor apiVersion %q: must be %s or %s",
+			probe.APIVersion, DescriptorAPIVersionV1alpha1, DescriptorAPIVersionV1alpha2)
+	}
+
 	return &descriptor, nil
+}
+
+// isV1alpha2 reports whether a descriptor uses the v1alpha2 format.
+func (d *WorkloadDescriptor) isV1alpha2() bool {
+	return d.APIVersion == DescriptorAPIVersionV1alpha2
+}
+
+// exposeNamePattern bounds an expose entry's name to a DNS label, since it becomes part of the
+// Endpoint's name.
+var exposeNamePattern = regexp.MustCompile(`^[a-z0-9]([-a-z0-9]*[a-z0-9])?$`)
+
+// validEndpointExposeVisibilities is the set of visibilities an Endpoint can request. project is
+// implicit for every workload endpoint and never requested through an Endpoint.
+var validEndpointExposeVisibilities = map[openchoreov1alpha1.EndpointVisibility]bool{
+	openchoreov1alpha1.EndpointVisibilityNamespace: true,
+	openchoreov1alpha1.EndpointVisibilityInternal:  true,
+	openchoreov1alpha1.EndpointVisibilityExternal:  true,
+}
+
+// validateDescriptor applies the rules of the descriptor's version to its endpoints and returns
+// warnings for deprecated fields. Field values shared by both versions (visibility values,
+// dependencies, configurations) are checked during conversion.
+func validateDescriptor(descriptor *WorkloadDescriptor) ([]string, error) {
+	if !descriptor.isV1alpha2() {
+		var warnings []string
+		for _, ep := range descriptor.Endpoints {
+			if len(ep.Expose) > 0 {
+				return nil, fmt.Errorf("endpoint %q: expose requires apiVersion %s", ep.Name, DescriptorAPIVersionV1alpha2)
+			}
+			if ep.Type != "" {
+				warnings = append(warnings, fmt.Sprintf("endpoint %q: type is deprecated, use protocol", ep.Name))
+			}
+			if len(ep.Visibility) > 0 {
+				warnings = append(warnings, fmt.Sprintf(
+					"endpoint %q: visibility is deprecated; expose the endpoint with expose in apiVersion %s",
+					ep.Name, DescriptorAPIVersionV1alpha2))
+			}
+		}
+		return warnings, nil
+	}
+
+	seen := make(map[string]bool, len(descriptor.Endpoints))
+	for _, ep := range descriptor.Endpoints {
+		if ep.Name == "" {
+			return nil, fmt.Errorf("every endpoint needs a name")
+		}
+		if seen[ep.Name] {
+			return nil, fmt.Errorf("endpoint %q is declared more than once", ep.Name)
+		}
+		seen[ep.Name] = true
+		if ep.Protocol == "" {
+			return nil, fmt.Errorf("endpoint %q: protocol is required", ep.Name)
+		}
+		if ep.Type != "" {
+			return nil, fmt.Errorf("endpoint %q: type is not supported in %s, use protocol", ep.Name, DescriptorAPIVersionV1alpha2)
+		}
+		if len(ep.Visibility) > 0 {
+			return nil, fmt.Errorf("endpoint %q: visibility is not supported in %s, use expose", ep.Name, DescriptorAPIVersionV1alpha2)
+		}
+		if err := validateExpose(ep); err != nil {
+			return nil, err
+		}
+	}
+	return nil, nil
+}
+
+// validateExpose checks a v1alpha2 endpoint's expose entries. Whether via names an allowed
+// EndpointType and whether the parameters fit it is decided by the server, which knows the
+// component's ComponentType.
+//
+// At most one entry may be unnamed. Its Endpoint takes the endpoint's own name, so adding a
+// named entry later does not rename it.
+func validateExpose(ep WorkloadDescriptorEndpoint) error {
+	names := make(map[string]bool, len(ep.Expose))
+	for i, ex := range ep.Expose {
+		if ex.Name != "" && (!exposeNamePattern.MatchString(ex.Name) || len(ex.Name) > 63) {
+			return fmt.Errorf("endpoint %q: expose[%d] name %q must be a lowercase DNS label", ep.Name, i, ex.Name)
+		}
+		if names[ex.Name] {
+			if ex.Name == "" {
+				return fmt.Errorf("endpoint %q: expose[%d] needs a name: only one expose entry of an endpoint may be unnamed", ep.Name, i)
+			}
+			return fmt.Errorf("endpoint %q: expose name %q is used more than once", ep.Name, ex.Name)
+		}
+		names[ex.Name] = true
+		if len(ex.Visibility) == 0 {
+			return fmt.Errorf("endpoint %q: expose[%d] needs at least one visibility", ep.Name, i)
+		}
+		visibilities := make(map[string]bool, len(ex.Visibility))
+		for _, v := range ex.Visibility {
+			if !validEndpointExposeVisibilities[openchoreov1alpha1.EndpointVisibility(v)] {
+				return fmt.Errorf("endpoint %q: expose[%d] visibility %q must be one of [namespace, internal, external]",
+					ep.Name, i, v)
+			}
+			if visibilities[v] {
+				return fmt.Errorf("endpoint %q: expose[%d] lists visibility %q more than once", ep.Name, i, v)
+			}
+			visibilities[v] = true
+		}
+	}
+	return nil
+}
+
+// exposuresFromDescriptor lists a v1alpha2 descriptor's expose entries in declaration order. It
+// returns nil for v1alpha1, which cannot express exposure, and an empty list for a v1alpha2
+// descriptor that exposes nothing.
+func exposuresFromDescriptor(descriptor *WorkloadDescriptor) []WorkloadExposure {
+	if !descriptor.isV1alpha2() {
+		return nil
+	}
+	exposures := []WorkloadExposure{}
+	for _, ep := range descriptor.Endpoints {
+		for _, ex := range ep.Expose {
+			exposures = append(exposures, WorkloadExposure{
+				Endpoint:   ep.Name,
+				Name:       ex.Name,
+				Visibility: ex.Visibility,
+				Via:        ex.Via,
+				Parameters: ex.Parameters,
+			})
+		}
+	}
+	return exposures
 }
 
 func validateConversionParams(params CreateWorkloadParams) error {
@@ -331,11 +547,19 @@ func addEndpointsFromDescriptor(workload *openchoreov1alpha1.Workload, descripto
 			visibility = append(visibility, vis)
 		}
 
+		protocol, err := descriptorEndpointProtocol(descriptorEndpoint)
+		if err != nil {
+			return err
+		}
+
+		// Both protocol and its deprecated name type are written: a control plane that predates
+		// protocol prunes it and still requires type.
 		endpoint := openchoreov1alpha1.WorkloadEndpoint{
 			DisplayName: descriptorEndpoint.DisplayName,
 			Port:        descriptorEndpoint.Port,
 			TargetPort:  descriptorEndpoint.TargetPort,
-			Type:        openchoreov1alpha1.EndpointProtocol(descriptorEndpoint.Type),
+			Protocol:    protocol,
+			Type:        protocol, //nolint:staticcheck // deprecated field still written for older control planes
 			BasePath:    descriptorEndpoint.BasePath,
 			Visibility:  visibility,
 		}
@@ -355,7 +579,7 @@ func addEndpointsFromDescriptor(workload *openchoreov1alpha1.Workload, descripto
 			}
 
 			endpoint.Schema = &openchoreov1alpha1.Schema{
-				Type:    schemaFormatByEndpointType[openchoreov1alpha1.EndpointProtocol(descriptorEndpoint.Type)],
+				Type:    schemaFormatByEndpointType[protocol],
 				Content: schemaContent,
 			}
 		}
@@ -363,6 +587,21 @@ func addEndpointsFromDescriptor(workload *openchoreov1alpha1.Workload, descripto
 		workload.Spec.Endpoints[descriptorEndpoint.Name] = endpoint
 	}
 	return nil
+}
+
+// descriptorEndpointProtocol reads an endpoint's protocol from protocol or its deprecated name
+// type. Setting both is allowed only when they agree.
+func descriptorEndpointProtocol(ep WorkloadDescriptorEndpoint) (openchoreov1alpha1.EndpointProtocol, error) {
+	switch {
+	case ep.Protocol != "" && ep.Type != "" && ep.Protocol != ep.Type:
+		return "", fmt.Errorf("endpoint %q: type %q does not match protocol %q; set only protocol", ep.Name, ep.Type, ep.Protocol)
+	case ep.Protocol != "":
+		return openchoreov1alpha1.EndpointProtocol(ep.Protocol), nil
+	case ep.Type != "":
+		return openchoreov1alpha1.EndpointProtocol(ep.Type), nil
+	default:
+		return "", fmt.Errorf("endpoint %q: protocol is required", ep.Name)
+	}
 }
 
 // schemaFormatByEndpointType maps an endpoint protocol to the canonical schema

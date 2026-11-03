@@ -525,6 +525,13 @@ const (
 	WorkloadEndpointVisibilityProject   WorkloadEndpointVisibility = "project"
 )
 
+// Defines values for WorkloadExposureVisibility.
+const (
+	WorkloadExposureVisibilityExternal  WorkloadExposureVisibility = "external"
+	WorkloadExposureVisibilityInternal  WorkloadExposureVisibility = "internal"
+	WorkloadExposureVisibilityNamespace WorkloadExposureVisibility = "namespace"
+)
+
 // ActionCapability Capabilities for a specific action
 type ActionCapability struct {
 	// Allowed Resources where action is allowed
@@ -583,6 +590,35 @@ type AllowedEndpointType struct {
 
 	// Ref Reference to an EndpointType or ClusterEndpointType template.
 	Ref EndpointTypeRef `json:"ref"`
+}
+
+// ApplyWorkloadRequest A workload and the Endpoints its descriptor asks for.
+type ApplyWorkloadRequest struct {
+	// Exposures The Endpoints the descriptor asks for, all of them. Omit for a descriptor that cannot
+	// express exposure, to leave the component's Endpoints alone.
+	Exposures *[]WorkloadExposure `json:"exposures,omitempty"`
+
+	// Workload Workload resource.
+	// Defines the source code, container, endpoints and dependencies for a component.
+	Workload Workload `json:"workload"`
+}
+
+// ApplyWorkloadResponse The applied workload and the Endpoints that changed.
+type ApplyWorkloadResponse struct {
+	// Endpoints Names of the descriptor-managed Endpoints, by what applying did to them.
+	Endpoints struct {
+		Created []string `json:"created"`
+		Deleted []string `json:"deleted"`
+
+		// Replaced Recreated because their EndpointType changed.
+		Replaced  []string `json:"replaced"`
+		Unchanged []string `json:"unchanged"`
+		Updated   []string `json:"updated"`
+	} `json:"endpoints"`
+
+	// Workload Workload resource.
+	// Defines the source code, container, endpoints and dependencies for a component.
+	Workload Workload `json:"workload"`
 }
 
 // AuditLogsFeature Audit trail read path
@@ -5258,6 +5294,27 @@ type WorkloadEndpointType string
 // WorkloadEndpointVisibility defines model for WorkloadEndpoint.Visibility.
 type WorkloadEndpointVisibility string
 
+// WorkloadExposure One Endpoint a workload descriptor asks for, unresolved.
+type WorkloadExposure struct {
+	// Endpoint The workload endpoint to expose.
+	Endpoint string `json:"endpoint"`
+
+	// Name Tells apart the Endpoints of one workload endpoint; at most one may omit it.
+	Name *string `json:"name,omitempty"`
+
+	// Parameters The Endpoint's parameters, validated against the resolved EndpointType.
+	Parameters *map[string]interface{} `json:"parameters,omitempty"`
+
+	// Via An allowedEndpoints alias of the component's ComponentType. Omit for the protocol's default entry.
+	Via *string `json:"via,omitempty"`
+
+	// Visibility Scopes the Endpoint exposes the workload endpoint to.
+	Visibility []WorkloadExposureVisibility `json:"visibility"`
+}
+
+// WorkloadExposureVisibility defines model for WorkloadExposure.Visibility.
+type WorkloadExposureVisibility string
+
 // WorkloadList Paginated list of workloads
 type WorkloadList struct {
 	Items []Workload `json:"items"`
@@ -6613,6 +6670,9 @@ type CreateWorkloadJSONRequestBody = Workload
 
 // UpdateWorkloadJSONRequestBody defines body for UpdateWorkload for application/json ContentType.
 type UpdateWorkloadJSONRequestBody = Workload
+
+// ApplyWorkloadJSONRequestBody defines body for ApplyWorkload for application/json ContentType.
+type ApplyWorkloadJSONRequestBody = ApplyWorkloadRequest
 
 // HandleAutoBuildJSONRequestBody defines body for HandleAutoBuild for application/json ContentType.
 type HandleAutoBuildJSONRequestBody HandleAutoBuildJSONBody

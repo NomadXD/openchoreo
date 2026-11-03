@@ -5,14 +5,20 @@ package handlers
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
+	"fmt"
 	"net/http"
+
+	"k8s.io/apimachinery/pkg/runtime"
+	"k8s.io/utils/ptr"
 
 	openchoreov1alpha1 "github.com/openchoreo/openchoreo/api/v1alpha1"
 	"github.com/openchoreo/openchoreo/internal/openchoreo-api/api/gen"
 	"github.com/openchoreo/openchoreo/internal/openchoreo-api/services"
 	workloadsvc "github.com/openchoreo/openchoreo/internal/openchoreo-api/services/workload"
 	"github.com/openchoreo/openchoreo/internal/server/middleware/audit"
+	"github.com/openchoreo/openchoreo/internal/workloadexposure"
 )
 
 // ListWorkloads returns a paginated list of workloads within a namespace.
@@ -199,4 +205,110 @@ func (h *Handler) DeleteWorkload(
 
 	h.logger.Info("Workload deleted successfully", "namespaceName", request.NamespaceName, "workload", request.WorkloadName)
 	return gen.DeleteWorkload204Response{}, nil
+}
+
+// ApplyWorkload creates or replaces a workload and manages the Endpoints its descriptor asks for.
+func (h *Handler) ApplyWorkload(
+	ctx context.Context,
+	request gen.ApplyWorkloadRequestObject,
+) (gen.ApplyWorkloadResponseObject, error) {
+	h.logger.Info("ApplyWorkload called", "namespaceName", request.NamespaceName, "workloadName", request.WorkloadName)
+
+	if request.Body == nil {
+		return gen.ApplyWorkload400JSONResponse{BadRequestJSONResponse: badRequest("Request body is required")}, nil
+	}
+
+	wCR, err := convert[gen.Workload, openchoreov1alpha1.Workload](request.Body.Workload)
+	if err != nil {
+		h.logger.Error("Failed to convert apply request", "error", err)
+		return gen.ApplyWorkload400JSONResponse{BadRequestJSONResponse: badRequest("Invalid request body")}, nil
+	}
+	wCR.Name = request.WorkloadName
+
+	applyReq := &workloadsvc.ApplyRequest{Workload: &wCR}
+	if request.Body.Exposures != nil {
+		applyReq.ManageEndpoints = true
+		applyReq.Exposures, err = toExposures(*request.Body.Exposures)
+		if err != nil {
+			return gen.ApplyWorkload400JSONResponse{BadRequestJSONResponse: badRequest(err.Error())}, nil
+		}
+	}
+
+	result, err := h.applyWorkload(ctx, request.NamespaceName, applyReq)
+	if err != nil {
+		if errors.Is(err, services.ErrForbidden) {
+			return gen.ApplyWorkload403JSONResponse{ForbiddenJSONResponse: forbidden()}, nil
+		}
+		if errors.Is(err, workloadsvc.ErrComponentNotFound) {
+			return gen.ApplyWorkload400JSONResponse{BadRequestJSONResponse: badRequest("Referenced component not found")}, nil
+		}
+		if errors.Is(err, workloadsvc.ErrWorkloadAlreadyExists) {
+			return gen.ApplyWorkload409JSONResponse{ConflictJSONResponse: conflict("Workload was created concurrently; retry")}, nil
+		}
+		if validationErr, ok := errors.AsType[*services.ValidationError](err); ok {
+			switch validationErr.StatusCode {
+			case http.StatusUnprocessableEntity:
+				return gen.ApplyWorkload422JSONResponse{UnprocessableContentJSONResponse: unprocessableContent(validationErr.Msg)}, nil
+			case http.StatusConflict:
+				return gen.ApplyWorkload409JSONResponse{ConflictJSONResponse: conflict(validationErr.Msg)}, nil
+			}
+			return gen.ApplyWorkload400JSONResponse{BadRequestJSONResponse: badRequest(validationErr.Msg)}, nil
+		}
+		h.logger.Error("Failed to apply workload", "error", err)
+		return gen.ApplyWorkload500JSONResponse{InternalErrorJSONResponse: internalError()}, nil
+	}
+
+	audit.SetResource(ctx, &audit.Resource{Namespace: request.NamespaceName, UID: string(result.Workload.UID), Name: result.Workload.Name})
+
+	genWorkload, err := convert[openchoreov1alpha1.Workload, gen.Workload](*result.Workload)
+	if err != nil {
+		h.logger.Error("Failed to convert applied workload", "error", err)
+		return gen.ApplyWorkload500JSONResponse{InternalErrorJSONResponse: internalError()}, nil
+	}
+
+	response := gen.ApplyWorkloadResponse{Workload: genWorkload}
+	response.Endpoints.Created = nonNil(result.Created)
+	response.Endpoints.Updated = nonNil(result.Updated)
+	response.Endpoints.Replaced = nonNil(result.Replaced)
+	response.Endpoints.Deleted = nonNil(result.Deleted)
+	response.Endpoints.Unchanged = nonNil(result.Unchanged)
+	return gen.ApplyWorkload200JSONResponse(response), nil
+}
+
+func (h *Handler) applyWorkload(ctx context.Context, namespaceName string, req *workloadsvc.ApplyRequest) (*workloadsvc.ApplyResult, error) {
+	plan, err := h.services.WorkloadService.PlanApply(ctx, namespaceName, req)
+	if err != nil {
+		return nil, err
+	}
+	return h.services.WorkloadService.ApplyWorkload(ctx, namespaceName, plan)
+}
+
+func toExposures(in []gen.WorkloadExposure) ([]workloadexposure.Exposure, error) {
+	exposures := make([]workloadexposure.Exposure, 0, len(in))
+	for _, e := range in {
+		exposure := workloadexposure.Exposure{
+			Endpoint: e.Endpoint,
+			Name:     ptr.Deref(e.Name, ""),
+			Via:      ptr.Deref(e.Via, ""),
+		}
+		for _, v := range e.Visibility {
+			exposure.Visibility = append(exposure.Visibility, openchoreov1alpha1.EndpointVisibility(v))
+		}
+		if e.Parameters != nil && len(*e.Parameters) > 0 {
+			raw, err := json.Marshal(*e.Parameters)
+			if err != nil {
+				return nil, fmt.Errorf("invalid parameters for endpoint %q: %w", e.Endpoint, err)
+			}
+			exposure.Parameters = &runtime.RawExtension{Raw: raw}
+		}
+		exposures = append(exposures, exposure)
+	}
+	return exposures, nil
+}
+
+func nonNil(names []string) []string {
+	if names == nil {
+		return []string{}
+	}
+	return names
 }

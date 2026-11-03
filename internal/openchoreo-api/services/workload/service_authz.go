@@ -149,3 +149,71 @@ func (s *workloadServiceWithAuthz) GetWorkloadSchema(ctx context.Context) (*extv
 	// No authz needed — schema is public metadata
 	return s.internal.GetWorkloadSchema(ctx)
 }
+
+// PlanApply only reads, so it is not authorized; ApplyWorkload authorizes every change it plans.
+func (s *workloadServiceWithAuthz) PlanApply(ctx context.Context, namespaceName string, req *ApplyRequest) (*ApplyPlan, error) {
+	return s.internal.PlanApply(ctx, namespaceName, req)
+}
+
+// ApplyWorkload checks the Workload write and, separately, every Endpoint the plan creates,
+// updates or deletes, before applying any of it. A caller allowed to publish Workloads but not to
+// expose them gets a 403 rather than a Workload without its Endpoints.
+func (s *workloadServiceWithAuthz) ApplyWorkload(ctx context.Context, namespaceName string, plan *ApplyPlan) (*ApplyResult, error) {
+	if plan == nil || plan.Workload == nil {
+		return s.internal.ApplyWorkload(ctx, namespaceName, plan)
+	}
+	w := plan.Workload
+	action := authz.ActionCreateWorkload
+	if plan.WorkloadExists {
+		action = authz.ActionUpdateWorkload
+	}
+	if err := s.authz.Check(ctx, services.CheckRequest{
+		Action:       action,
+		ResourceType: resourceTypeWorkload,
+		ResourceID:   w.Name,
+		Hierarchy: authz.ResourceHierarchy{
+			Namespace: namespaceName,
+			Project:   w.Spec.Owner.ProjectName,
+			Component: w.Spec.Owner.ComponentName,
+		},
+		Context: authz.Context{Resource: authz.ResourceAttribute{ReleaseLine: w.Spec.Owner.ReleaseLine}},
+	}); err != nil {
+		return nil, err
+	}
+
+	project := w.Spec.Owner.ProjectName
+	checks := make([]services.CheckRequest, 0, len(plan.Create)+len(plan.Update)+2*len(plan.Replace)+len(plan.Delete))
+	for _, ep := range plan.Create {
+		checks = append(checks, endpointCheckRequest(authz.ActionCreateEndpoint, namespaceName, project, ep.Name))
+	}
+	for _, ep := range plan.Update {
+		checks = append(checks, endpointCheckRequest(authz.ActionUpdateEndpoint, namespaceName, project, ep.Name))
+	}
+	for _, ep := range plan.Replace {
+		checks = append(checks,
+			endpointCheckRequest(authz.ActionDeleteEndpoint, namespaceName, project, ep.Name),
+			endpointCheckRequest(authz.ActionCreateEndpoint, namespaceName, project, ep.Name))
+	}
+	for _, ep := range plan.Delete {
+		checks = append(checks, endpointCheckRequest(authz.ActionDeleteEndpoint, namespaceName, project, ep.Name))
+	}
+	for _, check := range checks {
+		if err := s.authz.Check(ctx, check); err != nil {
+			return nil, err
+		}
+	}
+	return s.internal.ApplyWorkload(ctx, namespaceName, plan)
+}
+
+// endpointCheckRequest matches the requests the Endpoint service authorizes with.
+func endpointCheckRequest(action, namespaceName, projectName, endpointName string) services.CheckRequest {
+	return services.CheckRequest{
+		Action:       action,
+		ResourceType: "endpoint",
+		ResourceID:   endpointName,
+		Hierarchy: authz.ResourceHierarchy{
+			Namespace: namespaceName,
+			Project:   projectName,
+		},
+	}
+}

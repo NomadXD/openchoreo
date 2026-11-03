@@ -23,4 +23,10 @@ type Service interface {
 	GetWorkload(ctx context.Context, namespaceName, workloadName string) (*openchoreov1alpha1.Workload, error)
 	DeleteWorkload(ctx context.Context, namespaceName, workloadName string) error
 	GetWorkloadSchema(ctx context.Context) (*extv1.JSONSchemaProps, error)
+	// PlanApply resolves what applying a Workload and its descriptor's exposures would change,
+	// validating everything before anything is written.
+	PlanApply(ctx context.Context, namespaceName string, req *ApplyRequest) (*ApplyPlan, error)
+	// ApplyWorkload creates or replaces the Workload, then creates, updates and deletes the
+	// descriptor-managed Endpoints, as planned.
+	ApplyWorkload(ctx context.Context, namespaceName string, plan *ApplyPlan) (*ApplyResult, error)
 }

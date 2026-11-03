@@ -27,6 +27,15 @@ var apiGenerateReleaseOverride = auditgen.OperationDef{
 	Category: "CategoryManagement",
 }
 
+// apiApplyWorkloadOverride defines ApplyWorkload, which creates or replaces a
+// workload (and the Endpoints its descriptor exposes), so the method-derived
+// verb "create" does not describe it. The workload is the audited resource,
+// named by {workloadName}.
+var apiApplyWorkloadOverride = auditgen.OperationDef{
+	ID: "ApplyWorkload", Action: "apply_workload", ResourceType: "workload",
+	Category: "CategoryManagement", RESTResourceParam: "workloadName",
+}
+
 // apiAccessReadOverrides define the reads audited for what they disclose:
 // secret values and live container logs. Derivation has no verb for a GET, so
 // an override is the only way a read gets a definition.
@@ -124,6 +133,7 @@ var apiSingularOverrides = map[string]string{}
 func apiConfig() auditgen.Config {
 	overrides := map[string]auditgen.OperationDef{
 		apiGenerateReleaseOverride.ID: apiGenerateReleaseOverride,
+		apiApplyWorkloadOverride.ID:   apiApplyWorkloadOverride,
 	}
 	for _, def := range apiAccessReadOverrides {
 		overrides[def.ID] = def

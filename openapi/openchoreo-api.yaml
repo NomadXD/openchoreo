@@ -4285,6 +4285,51 @@ paths:
         '500':
           $ref: '#/components/responses/InternalError'
 
+  /api/v1/namespaces/{namespaceName}/workloads/{workloadName}/apply:
+    post:
+      operationId: applyWorkload
+      summary: Apply a workload with its exposures
+      description: |
+        Creates or replaces a workload, as published by a build from a workload descriptor, and
+        manages the Endpoints the descriptor asks for. Each exposure names an allowedEndpoints
+        alias of the component's ComponentType (or uses the protocol's default entry); the server
+        resolves it to an EndpointType and validates its parameters before writing anything.
+
+        With `exposures` present the list is complete: Endpoints created from the descriptor that
+        it no longer asks for are deleted, and an empty list deletes all of them. Without
+        `exposures` the component's Endpoints are left alone, as a plain workload update would.
+        Each Endpoint created, updated or deleted is authorized on its own, separately from the
+        workload.
+      tags: [Workloads]
+      parameters:
+        - $ref: '#/components/parameters/NamespaceNameParam'
+        - $ref: '#/components/parameters/WorkloadNameParam'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/ApplyWorkloadRequest'
+      responses:
+        '200':
+          description: Workload applied
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ApplyWorkloadResponse'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '409':
+          $ref: '#/components/responses/Conflict'
+        '422':
+          $ref: '#/components/responses/UnprocessableContent'
+        '500':
+          $ref: '#/components/responses/InternalError'
+
   # =============================================================================
   # Component Release Endpoints
   # =============================================================================
@@ -14270,6 +14315,82 @@ components:
         pagination:
           $ref: '#/components/schemas/Pagination'
 
+    ApplyWorkloadRequest:
+      type: object
+      description: A workload and the Endpoints its descriptor asks for.
+      required:
+        - workload
+      properties:
+        workload:
+          $ref: '#/components/schemas/Workload'
+        exposures:
+          type: array
+          description: |
+            The Endpoints the descriptor asks for, all of them. Omit for a descriptor that cannot
+            express exposure, to leave the component's Endpoints alone.
+          items:
+            $ref: '#/components/schemas/WorkloadExposure'
+    WorkloadExposure:
+      type: object
+      description: One Endpoint a workload descriptor asks for, unresolved.
+      required:
+        - endpoint
+        - visibility
+      properties:
+        endpoint:
+          type: string
+          description: The workload endpoint to expose.
+          minLength: 1
+        name:
+          type: string
+          description: Tells apart the Endpoints of one workload endpoint; at most one may omit it.
+          pattern: '^[a-z0-9]([-a-z0-9]*[a-z0-9])?$'
+          maxLength: 63
+        visibility:
+          type: array
+          description: Scopes the Endpoint exposes the workload endpoint to.
+          minItems: 1
+          uniqueItems: true
+          items:
+            type: string
+            enum: [namespace, internal, external]
+        via:
+          type: string
+          description: An allowedEndpoints alias of the component's ComponentType. Omit for the protocol's default entry.
+        parameters:
+          type: object
+          additionalProperties: true
+          description: The Endpoint's parameters, validated against the resolved EndpointType.
+    ApplyWorkloadResponse:
+      type: object
+      description: The applied workload and the Endpoints that changed.
+      required:
+        - workload
+        - endpoints
+      properties:
+        workload:
+          $ref: '#/components/schemas/Workload'
+        endpoints:
+          type: object
+          description: Names of the descriptor-managed Endpoints, by what applying did to them.
+          required: [created, updated, replaced, deleted, unchanged]
+          properties:
+            created:
+              type: array
+              items: {type: string}
+            updated:
+              type: array
+              items: {type: string}
+            replaced:
+              type: array
+              description: Recreated because their EndpointType changed.
+              items: {type: string}
+            deleted:
+              type: array
+              items: {type: string}
+            unchanged:
+              type: array
+              items: {type: string}
     Workload:
       type: object
       description: |

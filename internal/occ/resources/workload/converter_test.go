@@ -1178,6 +1178,7 @@ spec:
   endpoints:
     http:
       port: 8080
+      protocol: HTTP
       type: HTTP
       basePath: /api
       schema:

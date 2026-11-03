@@ -10,6 +10,7 @@ import (
 	"github.com/openchoreo/openchoreo/internal/occ/cmdutil"
 	"github.com/openchoreo/openchoreo/internal/occ/flags"
 	"github.com/openchoreo/openchoreo/internal/occ/resources/client"
+	synth "github.com/openchoreo/openchoreo/internal/occ/resources/workload"
 )
 
 func NewWorkloadCmd(f client.NewClientFunc) *cobra.Command {
@@ -55,7 +56,12 @@ Examples:
     --component product-catalog --image myimage:latest \
     --source-commit $(git rev-parse HEAD) --source-branch main \
     --source-repository https://github.com/my-org/my-repo \
-    --source-authored-at $(git show -s --format=%aI HEAD)`,
+    --source-authored-at $(git show -s --format=%aI HEAD)
+
+  # Create workload from an openchoreo.dev/v1alpha2 descriptor that exposes endpoints
+  occ workload create --descriptor workload.yaml --namespace acme-corp --project online-store \
+    --component product-catalog --image myimage:latest \
+    --output-path workload-cr.yaml --exposures-output exposures.json`,
 		RunE: func(cmd *cobra.Command, args []string) error {
 			descriptor, _ := cmd.Flags().GetString("descriptor")
 			image, _ := cmd.Flags().GetString("image")
@@ -63,26 +69,31 @@ Examples:
 			sourceBranch, _ := cmd.Flags().GetString("source-branch")
 			sourceRepository, _ := cmd.Flags().GetString("source-repository")
 			sourceAuthoredAt, _ := cmd.Flags().GetString("source-authored-at")
+			exposuresOutput, _ := cmd.Flags().GetString("exposures-output")
 			return New(nil).Create(CreateParams{
-				FilePath:         descriptor,
-				NamespaceName:    flags.GetNamespace(cmd),
-				ProjectName:      flags.GetProject(cmd),
-				ComponentName:    flags.GetComponent(cmd),
-				ReleaseLine:      flags.GetReleaseLine(cmd),
-				ImageURL:         image,
-				OutputPath:       flags.GetOutputPath(cmd),
-				DryRun:           flags.GetDryRun(cmd),
-				Mode:             flags.GetMode(cmd),
-				RootDir:          flags.GetRootDir(cmd),
-				SourceCommit:     sourceCommit,
-				SourceBranch:     sourceBranch,
-				SourceRepository: sourceRepository,
-				SourceAuthoredAt: sourceAuthoredAt,
+				FilePath:            descriptor,
+				NamespaceName:       flags.GetNamespace(cmd),
+				ProjectName:         flags.GetProject(cmd),
+				ComponentName:       flags.GetComponent(cmd),
+				ReleaseLine:         flags.GetReleaseLine(cmd),
+				ImageURL:            image,
+				OutputPath:          flags.GetOutputPath(cmd),
+				ExposuresOutputPath: exposuresOutput,
+				DryRun:              flags.GetDryRun(cmd),
+				Mode:                flags.GetMode(cmd),
+				RootDir:             flags.GetRootDir(cmd),
+				SourceCommit:        sourceCommit,
+				SourceBranch:        sourceBranch,
+				SourceRepository:    sourceRepository,
+				SourceAuthoredAt:    sourceAuthoredAt,
 			})
 		},
 	}
 	cmd.Flags().String("image", "", "Name of the Docker image (e.g., product-catalog:latest)")
 	cmd.Flags().String("descriptor", "", "Path to the workload descriptor file (e.g., workload.yaml)")
+	cmd.Flags().String("exposures-output", "",
+		"File to write the Endpoints an "+synth.DescriptorAPIVersionV1alpha2+" descriptor exposes, as JSON; "+
+			"written only for that version, and required when the descriptor exposes any endpoint")
 	cmd.Flags().String("source-commit", "", "VCS commit SHA the image was built from (optional)")
 	cmd.Flags().String("source-branch", "", "VCS branch the commit was built from (optional)")
 	cmd.Flags().String("source-repository", "", "VCS repository URL the commit belongs to (optional)")

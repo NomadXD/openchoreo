@@ -24,6 +24,159 @@ func (_m *MockClientWithResponsesInterface) EXPECT() *MockClientWithResponsesInt
 	return &MockClientWithResponsesInterface_Expecter{mock: &_m.Mock}
 }
 
+// ApplyWorkloadWithBodyWithResponse provides a mock function with given fields: ctx, namespaceName, workloadName, contentType, body, reqEditors
+func (_m *MockClientWithResponsesInterface) ApplyWorkloadWithBodyWithResponse(ctx context.Context, namespaceName string, workloadName string, contentType string, body io.Reader, reqEditors ...gen.RequestEditorFn) (*gen.ApplyWorkloadResp, error) {
+	_va := make([]interface{}, len(reqEditors))
+	for _i := range reqEditors {
+		_va[_i] = reqEditors[_i]
+	}
+	var _ca []interface{}
+	_ca = append(_ca, ctx, namespaceName, workloadName, contentType, body)
+	_ca = append(_ca, _va...)
+	ret := _m.Called(_ca...)
+
+	if len(ret) == 0 {
+		panic("no return value specified for ApplyWorkloadWithBodyWithResponse")
+	}
+
+	var r0 *gen.ApplyWorkloadResp
+	var r1 error
+	if rf, ok := ret.Get(0).(func(context.Context, string, string, string, io.Reader, ...gen.RequestEditorFn) (*gen.ApplyWorkloadResp, error)); ok {
+		return rf(ctx, namespaceName, workloadName, contentType, body, reqEditors...)
+	}
+	if rf, ok := ret.Get(0).(func(context.Context, string, string, string, io.Reader, ...gen.RequestEditorFn) *gen.ApplyWorkloadResp); ok {
+		r0 = rf(ctx, namespaceName, workloadName, contentType, body, reqEditors...)
+	} else {
+		if ret.Get(0) != nil {
+			r0 = ret.Get(0).(*gen.ApplyWorkloadResp)
+		}
+	}
+
+	if rf, ok := ret.Get(1).(func(context.Context, string, string, string, io.Reader, ...gen.RequestEditorFn) error); ok {
+		r1 = rf(ctx, namespaceName, workloadName, contentType, body, reqEditors...)
+	} else {
+		r1 = ret.Error(1)
+	}
+
+	return r0, r1
+}
+
+// MockClientWithResponsesInterface_ApplyWorkloadWithBodyWithResponse_Call is a *mock.Call that shadows Run/Return methods with type explicit version for method 'ApplyWorkloadWithBodyWithResponse'
+type MockClientWithResponsesInterface_ApplyWorkloadWithBodyWithResponse_Call struct {
+	*mock.Call
+}
+
+// ApplyWorkloadWithBodyWithResponse is a helper method to define mock.On call
+//   - ctx context.Context
+//   - namespaceName string
+//   - workloadName string
+//   - contentType string
+//   - body io.Reader
+//   - reqEditors ...gen.RequestEditorFn
+func (_e *MockClientWithResponsesInterface_Expecter) ApplyWorkloadWithBodyWithResponse(ctx interface{}, namespaceName interface{}, workloadName interface{}, contentType interface{}, body interface{}, reqEditors ...interface{}) *MockClientWithResponsesInterface_ApplyWorkloadWithBodyWithResponse_Call {
+	return &MockClientWithResponsesInterface_ApplyWorkloadWithBodyWithResponse_Call{Call: _e.mock.On("ApplyWorkloadWithBodyWithResponse",
+		append([]interface{}{ctx, namespaceName, workloadName, contentType, body}, reqEditors...)...)}
+}
+
+func (_c *MockClientWithResponsesInterface_ApplyWorkloadWithBodyWithResponse_Call) Run(run func(ctx context.Context, namespaceName string, workloadName string, contentType string, body io.Reader, reqEditors ...gen.RequestEditorFn)) *MockClientWithResponsesInterface_ApplyWorkloadWithBodyWithResponse_Call {
+	_c.Call.Run(func(args mock.Arguments) {
+		variadicArgs := make([]gen.RequestEditorFn, len(args)-5)
+		for i, a := range args[5:] {
+			if a != nil {
+				variadicArgs[i] = a.(gen.RequestEditorFn)
+			}
+		}
+		run(args[0].(context.Context), args[1].(string), args[2].(string), args[3].(string), args[4].(io.Reader), variadicArgs...)
+	})
+	return _c
+}
+
+func (_c *MockClientWithResponsesInterface_ApplyWorkloadWithBodyWithResponse_Call) Return(_a0 *gen.ApplyWorkloadResp, _a1 error) *MockClientWithResponsesInterface_ApplyWorkloadWithBodyWithResponse_Call {
+	_c.Call.Return(_a0, _a1)
+	return _c
+}
+
+func (_c *MockClientWithResponsesInterface_ApplyWorkloadWithBodyWithResponse_Call) RunAndReturn(run func(context.Context, string, string, string, io.Reader, ...gen.RequestEditorFn) (*gen.ApplyWorkloadResp, error)) *MockClientWithResponsesInterface_ApplyWorkloadWithBodyWithResponse_Call {
+	_c.Call.Return(run)
+	return _c
+}
+
+// ApplyWorkloadWithResponse provides a mock function with given fields: ctx, namespaceName, workloadName, body, reqEditors
+func (_m *MockClientWithResponsesInterface) ApplyWorkloadWithResponse(ctx context.Context, namespaceName string, workloadName string, body gen.ApplyWorkloadRequest, reqEditors ...gen.RequestEditorFn) (*gen.ApplyWorkloadResp, error) {
+	_va := make([]interface{}, len(reqEditors))
+	for _i := range reqEditors {
+		_va[_i] = reqEditors[_i]
+	}
+	var _ca []interface{}
+	_ca = append(_ca, ctx, namespaceName, workloadName, body)
+	_ca = append(_ca, _va...)
+	ret := _m.Called(_ca...)
+
+	if len(ret) == 0 {
+		panic("no return value specified for ApplyWorkloadWithResponse")
+	}
+
+	var r0 *gen.ApplyWorkloadResp
+	var r1 error
+	if rf, ok := ret.Get(0).(func(context.Context, string, string, gen.ApplyWorkloadRequest, ...gen.RequestEditorFn) (*gen.ApplyWorkloadResp, error)); ok {
+		return rf(ctx, namespaceName, workloadName, body, reqEditors...)
+	}
+	if rf, ok := ret.Get(0).(func(context.Context, string, string, gen.ApplyWorkloadRequest, ...gen.RequestEditorFn) *gen.ApplyWorkloadResp); ok {
+		r0 = rf(ctx, namespaceName, workloadName, body, reqEditors...)
+	} else {
+		if ret.Get(0) != nil {
+			r0 = ret.Get(0).(*gen.ApplyWorkloadResp)
+		}
+	}
+
+	if rf, ok := ret.Get(1).(func(context.Context, string, string, gen.ApplyWorkloadRequest, ...gen.RequestEditorFn) error); ok {
+		r1 = rf(ctx, namespaceName, workloadName, body, reqEditors...)
+	} else {
+		r1 = ret.Error(1)
+	}
+
+	return r0, r1
+}
+
+// MockClientWithResponsesInterface_ApplyWorkloadWithResponse_Call is a *mock.Call that shadows Run/Return methods with type explicit version for method 'ApplyWorkloadWithResponse'
+type MockClientWithResponsesInterface_ApplyWorkloadWithResponse_Call struct {
+	*mock.Call
+}
+
+// ApplyWorkloadWithResponse is a helper method to define mock.On call
+//   - ctx context.Context
+//   - namespaceName string
+//   - workloadName string
+//   - body gen.ApplyWorkloadRequest
+//   - reqEditors ...gen.RequestEditorFn
+func (_e *MockClientWithResponsesInterface_Expecter) ApplyWorkloadWithResponse(ctx interface{}, namespaceName interface{}, workloadName interface{}, body interface{}, reqEditors ...interface{}) *MockClientWithResponsesInterface_ApplyWorkloadWithResponse_Call {
+	return &MockClientWithResponsesInterface_ApplyWorkloadWithResponse_Call{Call: _e.mock.On("ApplyWorkloadWithResponse",
+		append([]interface{}{ctx, namespaceName, workloadName, body}, reqEditors...)...)}
+}
+
+func (_c *MockClientWithResponsesInterface_ApplyWorkloadWithResponse_Call) Run(run func(ctx context.Context, namespaceName string, workloadName string, body gen.ApplyWorkloadRequest, reqEditors ...gen.RequestEditorFn)) *MockClientWithResponsesInterface_ApplyWorkloadWithResponse_Call {
+	_c.Call.Run(func(args mock.Arguments) {
+		variadicArgs := make([]gen.RequestEditorFn, len(args)-4)
+		for i, a := range args[4:] {
+			if a != nil {
+				variadicArgs[i] = a.(gen.RequestEditorFn)
+			}
+		}
+		run(args[0].(context.Context), args[1].(string), args[2].(string), args[3].(gen.ApplyWorkloadRequest), variadicArgs...)
+	})
+	return _c
+}
+
+func (_c *MockClientWithResponsesInterface_ApplyWorkloadWithResponse_Call) Return(_a0 *gen.ApplyWorkloadResp, _a1 error) *MockClientWithResponsesInterface_ApplyWorkloadWithResponse_Call {
+	_c.Call.Return(_a0, _a1)
+	return _c
+}
+
+func (_c *MockClientWithResponsesInterface_ApplyWorkloadWithResponse_Call) RunAndReturn(run func(context.Context, string, string, gen.ApplyWorkloadRequest, ...gen.RequestEditorFn) (*gen.ApplyWorkloadResp, error)) *MockClientWithResponsesInterface_ApplyWorkloadWithResponse_Call {
+	_c.Call.Return(run)
+	return _c
+}
+
 // CreateClusterComponentTypeWithBodyWithResponse provides a mock function with given fields: ctx, contentType, body, reqEditors
 func (_m *MockClientWithResponsesInterface) CreateClusterComponentTypeWithBodyWithResponse(ctx context.Context, contentType string, body io.Reader, reqEditors ...gen.RequestEditorFn) (*gen.CreateClusterComponentTypeResp, error) {
 	_va := make([]interface{}, len(reqEditors))

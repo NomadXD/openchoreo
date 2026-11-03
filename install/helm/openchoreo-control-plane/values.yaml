@@ -1358,13 +1358,19 @@ openchoreoApi:
                 - "incidents:update"
                 - "traces:view"
 
-            # Workload publisher role for creating workloads from CI workflows
+            # Workload publisher role for creating workloads from CI workflows.
+            # The endpoint actions let a build apply the Endpoints its workload
+            # descriptor exposes (applyWorkload); remove them to keep exposure a
+            # portal-only decision.
             - name: workload-publisher
               system: true
               actions:
                 - "workload:create"
                 - "workload:update"
                 - "workload:view"
+                - "endpoint:create"
+                - "endpoint:update"
+                - "endpoint:delete"
                 - "workflowrun:view"
                 - "workflowrun:update"
 

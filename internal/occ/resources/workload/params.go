@@ -12,9 +12,11 @@ type CreateWorkloadParams struct {
 	ReleaseLine   string // Empty or main for the component's main line
 	ImageURL      string
 	OutputPath    string
-	DryRun        bool
-	Mode          string // "api-server" or "file-system"
-	RootDir       string
+	// ExposuresOutputPath receives the Endpoints a v1alpha2 descriptor asks for, as JSON.
+	ExposuresOutputPath string
+	DryRun              bool
+	Mode                string // "api-server" or "file-system"
+	RootDir             string
 
 	// SourceCommit, SourceBranch, and SourceRepository record the VCS commit this
 	// image was built from. Optional: DF/CFR/MTTR compute without them; Delivery

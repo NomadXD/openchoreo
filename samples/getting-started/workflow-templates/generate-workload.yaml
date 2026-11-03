@@ -121,6 +121,15 @@ spec:
               exit 1
             fi
 
+            # A descriptor's exposures are applied together with the workload. An occ that
+            # predates them has no --exposures-output, and also no way to read a descriptor
+            # that declares any, so the flag is passed only when occ offers it.
+            EXPOSURES_PATH="${WORK_DIR}/exposures.json"
+            EXPOSURES_FLAG=""
+            if occ workload create --help 2>/dev/null | grep -q -- "--exposures-output"; then
+              EXPOSURES_FLAG="--exposures-output ${EXPOSURES_PATH}"
+            fi
+
             # --- Step 1: Generate workload CR using occ ---
             # A run of a release line publishes that line's Workload.
             WORKLOAD_FROM_SOURCE="false"
@@ -135,6 +144,7 @@ spec:
                 ${RELEASE_LINE:+--release-line "${RELEASE_LINE}"} \
                 --image "${IMAGE}" \
                 --descriptor "workload.yaml" \
+                ${EXPOSURES_FLAG} \
                 --source-commit "${SOURCE_COMMIT}" \
                 --source-branch "${SOURCE_BRANCH}" \
                 --source-repository "${SOURCE_REPOSITORY}" \
@@ -194,73 +204,115 @@ spec:
             # --- Step 4: Create or update workload via API server ---
             WORKLOAD_NAME=$(yq -r '.metadata.name' "${WORKLOAD_JSON}")
 
-            echo ">> Creating workload via ${API_URL}/api/v1/namespaces/${NAMESPACE_NAME}/workloads"
-            RESPONSE=$(curl -sk -w "\n%{http_code}" \
-              -X POST "${API_URL}/api/v1/namespaces/${NAMESPACE_NAME}/workloads" \
-              -H "Content-Type: application/json" \
-              -H "Authorization: Bearer ${ACCESS_TOKEN}" \
-              -d @"${WORKLOAD_JSON}")
-
-            HTTP_CODE=$(echo "${RESPONSE}" | tail -1)
-            BODY=$(echo "${RESPONSE}" | sed '$d')
-
-            if [ "${HTTP_CODE}" -ge 200 ] && [ "${HTTP_CODE}" -lt 300 ]; then
-              echo ">> Workload created successfully (HTTP ${HTTP_CODE}): ${BODY}"
-            elif [ "${HTTP_CODE}" -eq 409 ]; then
-              if [ "${WORKLOAD_FROM_SOURCE}" = "true" ]; then
-                echo ">> Workload already exists, updating via PUT (full replace - source-defined)"
-                RESPONSE=$(curl -sk -w "\n%{http_code}" \
-                  -X PUT "${API_URL}/api/v1/namespaces/${NAMESPACE_NAME}/workloads/${WORKLOAD_NAME}" \
-                  -H "Content-Type: application/json" \
-                  -H "Authorization: Bearer ${ACCESS_TOKEN}" \
-                  -d @"${WORKLOAD_JSON}")
+            # A build from a descriptor applies the workload through the apply operation, which
+            # also creates, updates and deletes the Endpoints the descriptor exposes. Without an
+            # exposures file the API leaves Endpoints alone, so an API that predates the
+            # operation (404) is only acceptable then, falling back to create or replace.
+            WORKLOAD_APPLIED="false"
+            if [ "${WORKLOAD_FROM_SOURCE}" = "true" ]; then
+              if [ -f "${EXPOSURES_PATH}" ]; then
+                echo ">> Exposures from the workload descriptor:"
+                cat "${EXPOSURES_PATH}"
+                jq -n --slurpfile w "${WORKLOAD_JSON}" --slurpfile e "${EXPOSURES_PATH}" \
+                  '{workload: $w[0], exposures: $e[0]}' > "${WORK_DIR}/apply-request.json"
               else
-                echo ">> Workload already exists, updating only container image (auto-generated)"
-                GET_RESPONSE=$(curl -sk -w "\n%{http_code}" \
-                  -X GET "${API_URL}/api/v1/namespaces/${NAMESPACE_NAME}/workloads/${WORKLOAD_NAME}" \
-                  -H "Authorization: Bearer ${ACCESS_TOKEN}")
-
-                GET_HTTP_CODE=$(echo "${GET_RESPONSE}" | tail -1)
-                GET_BODY=$(echo "${GET_RESPONSE}" | sed '$d')
-
-                if [ "${GET_HTTP_CODE}" -lt 200 ] || [ "${GET_HTTP_CODE}" -ge 300 ]; then
-                  echo ">> Failed to get existing workload (HTTP ${GET_HTTP_CODE}): ${GET_BODY}"
-                  exit 1
-                fi
-
-                echo "${GET_BODY}" > "${WORK_DIR}/workload-existing.json"
-                NEW_IMAGE=$(jq -r '.spec.container.image' "${WORKLOAD_JSON}")
-                NEW_SOURCE=$(jq -c '.spec.source // null' "${WORKLOAD_JSON}")
-
-                # spec.source must move with spec.container.image. Updating the image
-                # alone would leave the previous build's commit attached to the new
-                # one, which silently reports a wrong Lead Time for Changes; dropping
-                # it when this build has no provenance reports no lead time instead.
-                echo ">> Updating container image to: ${NEW_IMAGE}"
-                jq --arg img "${NEW_IMAGE}" --argjson src "${NEW_SOURCE}" \
-                  '.spec.container.image = $img | if $src == null then del(.spec.source) else .spec.source = $src end' \
-                  "${WORK_DIR}/workload-existing.json" \
-                  > "${WORK_DIR}/workload-merged.json"
-
-                RESPONSE=$(curl -sk -w "\n%{http_code}" \
-                  -X PUT "${API_URL}/api/v1/namespaces/${NAMESPACE_NAME}/workloads/${WORKLOAD_NAME}" \
-                  -H "Content-Type: application/json" \
-                  -H "Authorization: Bearer ${ACCESS_TOKEN}" \
-                  -d @"${WORK_DIR}/workload-merged.json")
+                jq -n --slurpfile w "${WORKLOAD_JSON}" '{workload: $w[0]}' > "${WORK_DIR}/apply-request.json"
               fi
+
+              echo ">> Applying workload via ${API_URL}/api/v1/namespaces/${NAMESPACE_NAME}/workloads/${WORKLOAD_NAME}/apply"
+              RESPONSE=$(curl -sk -w "\n%{http_code}" \
+                -X POST "${API_URL}/api/v1/namespaces/${NAMESPACE_NAME}/workloads/${WORKLOAD_NAME}/apply" \
+                -H "Content-Type: application/json" \
+                -H "Authorization: Bearer ${ACCESS_TOKEN}" \
+                -d @"${WORK_DIR}/apply-request.json")
 
               HTTP_CODE=$(echo "${RESPONSE}" | tail -1)
               BODY=$(echo "${RESPONSE}" | sed '$d')
 
               if [ "${HTTP_CODE}" -ge 200 ] && [ "${HTTP_CODE}" -lt 300 ]; then
-                echo ">> Workload updated successfully (HTTP ${HTTP_CODE}): ${BODY}"
+                WORKLOAD_APPLIED="true"
+                echo ">> Workload applied (HTTP ${HTTP_CODE})"
+                echo "${BODY}" | jq -r '.endpoints | to_entries[] | select(.value | length > 0) | ">> Endpoints \(.key): \(.value | join(", "))"'
+                if echo "${BODY}" | jq -e '.endpoints.replaced | length > 0' > /dev/null; then
+                  echo ">> Replaced Endpoints changed EndpointType; their URLs may have changed"
+                fi
+              elif [ "${HTTP_CODE}" -eq 404 ] && [ ! -f "${EXPOSURES_PATH}" ]; then
+                echo ">> The API does not support applying workloads; creating or replacing it instead"
               else
-                echo ">> Failed to update workload (HTTP ${HTTP_CODE}): ${BODY}"
+                echo ">> Failed to apply workload (HTTP ${HTTP_CODE}): ${BODY}"
                 exit 1
               fi
-            else
-              echo ">> Failed to create workload (HTTP ${HTTP_CODE}): ${BODY}"
-              exit 1
+            fi
+
+            if [ "${WORKLOAD_APPLIED}" != "true" ]; then
+              echo ">> Creating workload via ${API_URL}/api/v1/namespaces/${NAMESPACE_NAME}/workloads"
+              RESPONSE=$(curl -sk -w "\n%{http_code}" \
+                -X POST "${API_URL}/api/v1/namespaces/${NAMESPACE_NAME}/workloads" \
+                -H "Content-Type: application/json" \
+                -H "Authorization: Bearer ${ACCESS_TOKEN}" \
+                -d @"${WORKLOAD_JSON}")
+
+              HTTP_CODE=$(echo "${RESPONSE}" | tail -1)
+              BODY=$(echo "${RESPONSE}" | sed '$d')
+
+              if [ "${HTTP_CODE}" -ge 200 ] && [ "${HTTP_CODE}" -lt 300 ]; then
+                echo ">> Workload created successfully (HTTP ${HTTP_CODE}): ${BODY}"
+              elif [ "${HTTP_CODE}" -eq 409 ]; then
+                if [ "${WORKLOAD_FROM_SOURCE}" = "true" ]; then
+                  echo ">> Workload already exists, updating via PUT (full replace - source-defined)"
+                  RESPONSE=$(curl -sk -w "\n%{http_code}" \
+                    -X PUT "${API_URL}/api/v1/namespaces/${NAMESPACE_NAME}/workloads/${WORKLOAD_NAME}" \
+                    -H "Content-Type: application/json" \
+                    -H "Authorization: Bearer ${ACCESS_TOKEN}" \
+                    -d @"${WORKLOAD_JSON}")
+                else
+                  echo ">> Workload already exists, updating only container image (auto-generated)"
+                  GET_RESPONSE=$(curl -sk -w "\n%{http_code}" \
+                    -X GET "${API_URL}/api/v1/namespaces/${NAMESPACE_NAME}/workloads/${WORKLOAD_NAME}" \
+                    -H "Authorization: Bearer ${ACCESS_TOKEN}")
+
+                  GET_HTTP_CODE=$(echo "${GET_RESPONSE}" | tail -1)
+                  GET_BODY=$(echo "${GET_RESPONSE}" | sed '$d')
+
+                  if [ "${GET_HTTP_CODE}" -lt 200 ] || [ "${GET_HTTP_CODE}" -ge 300 ]; then
+                    echo ">> Failed to get existing workload (HTTP ${GET_HTTP_CODE}): ${GET_BODY}"
+                    exit 1
+                  fi
+
+                  echo "${GET_BODY}" > "${WORK_DIR}/workload-existing.json"
+                  NEW_IMAGE=$(jq -r '.spec.container.image' "${WORKLOAD_JSON}")
+                  NEW_SOURCE=$(jq -c '.spec.source // null' "${WORKLOAD_JSON}")
+
+                  # spec.source must move with spec.container.image. Updating the image
+                  # alone would leave the previous build's commit attached to the new
+                  # one, which silently reports a wrong Lead Time for Changes; dropping
+                  # it when this build has no provenance reports no lead time instead.
+                  echo ">> Updating container image to: ${NEW_IMAGE}"
+                  jq --arg img "${NEW_IMAGE}" --argjson src "${NEW_SOURCE}" \
+                    '.spec.container.image = $img | if $src == null then del(.spec.source) else .spec.source = $src end' \
+                    "${WORK_DIR}/workload-existing.json" \
+                    > "${WORK_DIR}/workload-merged.json"
+
+                  RESPONSE=$(curl -sk -w "\n%{http_code}" \
+                    -X PUT "${API_URL}/api/v1/namespaces/${NAMESPACE_NAME}/workloads/${WORKLOAD_NAME}" \
+                    -H "Content-Type: application/json" \
+                    -H "Authorization: Bearer ${ACCESS_TOKEN}" \
+                    -d @"${WORK_DIR}/workload-merged.json")
+                fi
+
+                HTTP_CODE=$(echo "${RESPONSE}" | tail -1)
+                BODY=$(echo "${RESPONSE}" | sed '$d')
+
+                if [ "${HTTP_CODE}" -ge 200 ] && [ "${HTTP_CODE}" -lt 300 ]; then
+                  echo ">> Workload updated successfully (HTTP ${HTTP_CODE}): ${BODY}"
+                else
+                  echo ">> Failed to update workload (HTTP ${HTTP_CODE}): ${BODY}"
+                  exit 1
+                fi
+              else
+                echo ">> Failed to create workload (HTTP ${HTTP_CODE}): ${BODY}"
+                exit 1
+              fi
             fi
 
             # --- Step 5: Annotate the WorkflowRun with the workload CR ---
