@@ -35,8 +35,9 @@ EndpointTypes that render the backends' matches and mirrors.
   - [`endpoint-types/istio-virtualservice.yaml`](endpoint-types/istio-virtualservice.yaml):
     the same rules for in-cluster callers through an Istio sidecar mesh.
 - **No downtime.** A candidate starts at weight 0, so it gets traffic only
-  when you raise its share. Overrides for a backend a release removed are
-  ignored, so the release promotes as is.
+  when you raise its share, and overrides that leave every backend at weight 0
+  are refused while the binding keeps its current route. Overrides for a
+  backend a release removed are ignored, so the release promotes as is.
 - **`autoDeploy`.** The Endpoint controller binds each new release to the
   first environment of the project's deployment pipeline.
 
