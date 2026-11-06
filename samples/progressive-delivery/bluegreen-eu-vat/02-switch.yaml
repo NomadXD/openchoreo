@@ -1,0 +1,15 @@
+# Step 2, at 00:00 on 1 July: every buyer moves to green at once. Mixing
+# versions isn't allowed (it would charge some buyers the wrong VAT), so this
+# is a switch, not a ramp. It edits the binding: no new release, and the
+# preview header keeps reaching green, because a match ignores weights.
+apiVersion: openchoreo.dev/v1alpha1
+kind: EndpointReleaseBinding
+metadata:
+  name: checkout-development
+  namespace: default
+spec:
+  owner: { projectName: default, endpointName: checkout }
+  environment: development
+  backendOverrides:
+    - { name: checkout-blue, weight: 0 }
+    - { name: checkout-green, weight: 100 }

@@ -1,0 +1,74 @@
+# A: the cart as it is. B: the cart with 'Customers who bought this also
+# bought'. Both assign the exp_cartrecs cookie (a or b, 50/50) on a first
+# visit, so each visitor stays in one group.
+apiVersion: openchoreo.dev/v1alpha1
+kind: Component
+metadata:
+  name: storefront
+  namespace: default
+spec:
+  owner:
+    projectName: default
+  autoDeploy: true
+  componentType:
+    kind: ClusterComponentType
+    name: deployment/service
+---
+apiVersion: openchoreo.dev/v1alpha1
+kind: Workload
+metadata:
+  name: storefront-workload
+  namespace: default
+spec:
+  owner:
+    projectName: default
+    componentName: storefront
+  endpoints:
+    http:
+      type: HTTP
+      port: 8080
+  container:
+    image: openchoreo-demo/demo-go:local
+    env:
+      - key: MODE
+        value: storefront
+      - key: APP_NAME
+        value: storefront
+      - key: RECS
+        value: "false"
+---
+apiVersion: openchoreo.dev/v1alpha1
+kind: Component
+metadata:
+  name: storefront-recs
+  namespace: default
+spec:
+  owner:
+    projectName: default
+  autoDeploy: true
+  componentType:
+    kind: ClusterComponentType
+    name: deployment/service
+---
+apiVersion: openchoreo.dev/v1alpha1
+kind: Workload
+metadata:
+  name: storefront-recs-workload
+  namespace: default
+spec:
+  owner:
+    projectName: default
+    componentName: storefront-recs
+  endpoints:
+    http:
+      type: HTTP
+      port: 8080
+  container:
+    image: openchoreo-demo/demo-go:local
+    env:
+      - key: MODE
+        value: storefront
+      - key: APP_NAME
+        value: storefront-recs
+      - key: RECS
+        value: "true"

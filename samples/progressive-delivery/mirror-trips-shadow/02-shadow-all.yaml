@@ -1,0 +1,15 @@
+# Step 2: copy every request in development. This edits the binding, not the
+# Endpoint, so no new release is cut and staging and production keep the
+# release's 10%. An override names a backend and sets its weight, its mirror
+# share or both; a mirror override needs a backend the release mirrors.
+# demo.sh applies the same change with kubectl patch.
+apiVersion: openchoreo.dev/v1alpha1
+kind: EndpointReleaseBinding
+metadata:
+  name: trips-api-development
+  namespace: default
+spec:
+  owner: { projectName: default, endpointName: trips-api }
+  environment: development
+  backendOverrides:
+    - { name: trips-go, mirror: { percent: 100 } }

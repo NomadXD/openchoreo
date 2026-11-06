@@ -1,0 +1,13 @@
+# Step 3: a bug in green (say, a wrong rate for one country). Switch back in
+# seconds; blue is still running, so this is the same one edit.
+apiVersion: openchoreo.dev/v1alpha1
+kind: EndpointReleaseBinding
+metadata:
+  name: checkout-development
+  namespace: default
+spec:
+  owner: { projectName: default, endpointName: checkout }
+  environment: development
+  backendOverrides:
+    - { name: checkout-blue, weight: 100 }
+    - { name: checkout-green, weight: 0 }

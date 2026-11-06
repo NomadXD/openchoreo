@@ -109,6 +109,33 @@ var _ = Describe("AutoDeploy", func() {
 		Expect(got[0].Spec.EndpointRelease).To(Equal(second.Status.LatestRelease.Name))
 	})
 
+	It("leaves the overrides as they are when it pins a new release", func() {
+		ep := newEndpoint("ep-auto", "p-auto", clusterTypeRef("cet-auto"),
+			componentBackend("stable", "greeter", "http", 100),
+			componentBackend("canary", "greeter-v2", "http", 0))
+		ep.Spec.AutoDeploy = true
+		cli := buildClient(newClusterEndpointType("cet-auto", ""), newWorkload("p-auto", "greeter", "http"),
+			newWorkload("p-auto", "greeter-v2", "http"), newProject("p-auto"), newPipeline(), ep)
+
+		first := settle(cli, ep)
+		binding := bindings(cli)[0]
+		binding.Spec.BackendOverrides = []openchoreov1alpha1.EndpointBackendOverride{
+			{Name: "stable", Weight: ptr.To[int32](0)},
+			{Name: "canary", Weight: ptr.To[int32](100)},
+		}
+		Expect(cli.Update(adCtx, &binding)).To(Succeed())
+
+		// The canary finished: keep only it.
+		first.Spec.BackendRefs = first.Spec.BackendRefs[1:]
+		Expect(cli.Update(adCtx, first)).To(Succeed())
+
+		second := settle(cli, ep)
+		got := bindings(cli)[0]
+		Expect(got.Spec.EndpointRelease).To(Equal(second.Status.LatestRelease.Name))
+		Expect(got.Spec.BackendOverrides).To(Equal(binding.Spec.BackendOverrides),
+			"overrides are the user's; the binding ignores and reports the one for stable")
+	})
+
 	It("creates no binding without autoDeploy", func() {
 		ep := newAutoDeployEndpoint(false)
 		cli := buildClient(newClusterEndpointType("cet-auto", ""), newWorkload("p-auto", "greeter", "http"),

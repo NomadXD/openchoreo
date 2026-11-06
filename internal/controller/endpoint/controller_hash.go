@@ -4,10 +4,10 @@
 package endpoint
 
 import (
-	"strings"
+	"encoding/json"
+	"fmt"
 
 	"k8s.io/apimachinery/pkg/runtime"
-	"k8s.io/utils/dump"
 
 	openchoreov1alpha1 "github.com/openchoreo/openchoreo/api/v1alpha1"
 	"github.com/openchoreo/openchoreo/pkg/hash"
@@ -24,18 +24,21 @@ type ReleaseSpec struct {
 	Parameters   *runtime.RawExtension                          `json:"parameters,omitempty"`
 }
 
-// computeReleaseHash returns a deterministic hash for a ReleaseSpec. Fields
-// added since a release could first be cut are hashed as they were before they
-// existed while they are unset, so upgrading doesn't cut a new release for an
-// unchanged Endpoint.
-func computeReleaseHash(spec ReleaseSpec) string {
-	return hash.ComputeHashOfString(hashCompatible.Replace(dump.ForHash(spec)), nil)
+// computeReleaseHash returns a deterministic hash of a ReleaseSpec's canonical
+// JSON: object keys sorted and unset optional fields left out, so a field
+// added later doesn't change the hash of an Endpoint that doesn't set it.
+func computeReleaseHash(spec ReleaseSpec) (string, error) {
+	raw, err := json.Marshal(spec)
+	if err != nil {
+		return "", fmt.Errorf("marshal release spec: %w", err)
+	}
+	var v any
+	if err := json.Unmarshal(raw, &v); err != nil {
+		return "", fmt.Errorf("unmarshal release spec: %w", err)
+	}
+	canonical, err := json.Marshal(v)
+	if err != nil {
+		return "", fmt.Errorf("marshal canonical release spec: %w", err)
+	}
+	return hash.ComputeHashOfString(string(canonical), nil), nil
 }
-
-// hashCompatible rewrites dump.ForHash output to what it was before these
-// fields existed. Each pattern is anchored on the field after it, so it can't
-// match anywhere else.
-var hashCompatible = strings.NewReplacer(
-	// A Component backend without a release line.
-	" ReleaseLine:(string)} Weight:", "} Weight:",
-)

@@ -1,0 +1,53 @@
+# An Istio (sidecar) EndpointType for in-cluster, east-west callers. It renders
+# one VirtualService whose hosts are the backend components' own Services, so
+# callers keep calling the address they already use, and their sidecars apply
+# the Endpoint's matches, weighted split and mirrors from ${rules}. Install it
+# only on data planes running Istio with sidecars on the callers.
+apiVersion: openchoreo.dev/v1alpha1
+kind: ClusterEndpointType
+metadata:
+  name: istio-virtualservice
+spec:
+  validations:
+    - rule: ${visibility == ["namespace"]}
+      message: istio-virtualservice serves in-cluster callers only; set spec.visibility to [namespace]
+    - rule: ${backends.all(b, b.protocol in ["HTTP", "GraphQL", "Websocket"])}
+      message: istio-virtualservice only routes HTTP, GraphQL and Websocket endpoints
+  resources:
+    - id: virtual-service
+      template:
+        apiVersion: networking.istio.io/v1
+        kind: VirtualService
+        metadata:
+          name: ${oc_generate_name(metadata.endpointName, "mesh")}
+          namespace: ${metadata.namespace}
+          labels: ${metadata.labels}
+        spec:
+          hosts: ${backends.map(b, b.serviceName + "." + b.namespace + ".svc.cluster.local")}
+          # One route per rule, first match wins. A path is matched with its
+          # regex, because Istio's prefix is a plain string prefix and /next
+          # would also match /nextpage. Header names arrive lowercased, as
+          # Istio requires, and each header at most once.
+          http: |
+            ${rules.map(r, {
+                "name": r.name,
+                "match": size(r.matches) > 0
+                  ? r.matches.map(m, {
+                      "uri": has(m.path) ? {"regex": m.path.regex} : oc_omit(),
+                      "headers": size(m.conditions) > 0
+                        ? m.conditions.transformMapEntry(i, h,
+                            {h.name: h.type == "Exact" ? {"exact": h.value} : {"regex": h.value}})
+                        : oc_omit()
+                    })
+                  : oc_omit(),
+                "route": r.backends.filter(b, b.weight > 0).map(b, {
+                  "destination": {"host": b.serviceName + "." + b.namespace + ".svc.cluster.local",
+                                  "port": {"number": b.port}},
+                  "weight": b.weight}),
+                "mirrors": size(r.mirrors) > 0
+                  ? r.mirrors.map(mi, {
+                      "destination": {"host": mi.backend.serviceName + "." + mi.backend.namespace + ".svc.cluster.local",
+                                      "port": {"number": mi.backend.port}},
+                      "percentage": {"value": double(mi.percent)}})
+                  : oc_omit()
+              })}

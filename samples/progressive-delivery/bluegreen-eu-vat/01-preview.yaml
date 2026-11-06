@@ -1,0 +1,24 @@
+# Step 1: everyone stays on blue. QA previews green in production by sending
+# x-preview: green; nobody else can reach it.
+apiVersion: openchoreo.dev/v1alpha1
+kind: Endpoint
+metadata:
+  name: checkout
+  namespace: default
+spec:
+  owner:
+    projectName: default
+  type:
+    kind: ClusterEndpointType
+    name: http-progressive
+  visibility: [external]
+  autoDeploy: true
+  parameters:
+    pathPrefix: /checkout
+  backendRefs:
+    - { name: checkout-blue, component: { name: checkout-blue, endpoint: http }, weight: 100 }
+    - name: checkout-green
+      component: { name: checkout-green, endpoint: http }
+      weight: 0
+      match:
+        headers: [{ name: x-preview, value: green }]

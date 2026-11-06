@@ -1,0 +1,19 @@
+# Step 3: B won (more orders, bigger baskets). Ship it to everyone and retire A.
+# Clear the binding's backendOverrides first, if you set any.
+apiVersion: openchoreo.dev/v1alpha1
+kind: Endpoint
+metadata:
+  name: cart
+  namespace: default
+spec:
+  owner:
+    projectName: default
+  type:
+    kind: ClusterEndpointType
+    name: http-progressive
+  visibility: [external]
+  autoDeploy: true
+  parameters:
+    pathPrefix: /shop
+  backendRefs:
+    - { name: storefront-recs, component: { name: storefront-recs, endpoint: http }, weight: 100 }

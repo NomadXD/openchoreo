@@ -120,13 +120,16 @@ func (r *Reconciler) reconcile(ctx context.Context, old, ep *openchoreov1alpha1.
 		return ctrl.Result{}, nil
 	}
 
-	releaseHash := computeReleaseHash(ReleaseSpec{
+	releaseHash, err := computeReleaseHash(ReleaseSpec{
 		EndpointType: snapshot,
 		Visibility:   ep.Spec.Visibility,
 		BackendRefs:  ep.Spec.BackendRefs,
 		Schema:       ep.Spec.Schema,
 		Parameters:   ep.Spec.Parameters,
 	})
+	if err != nil {
+		return ctrl.Result{}, err
+	}
 
 	if ep.Status.LatestRelease == nil || ep.Status.LatestRelease.Hash != releaseHash {
 		releaseName := fmt.Sprintf("%s-%s", ep.Name, releaseHash)
@@ -220,7 +223,7 @@ func (r *Reconciler) validateBackends(ctx context.Context, ep *openchoreov1alpha
 		return nil, fmt.Errorf("list Workloads: %w", err)
 	}
 
-	var problems []backendProblem
+	problems := matchProblems(ep)
 	for _, ref := range ep.Spec.BackendRefs {
 		if ref.Kind != openchoreov1alpha1.EndpointBackendKindComponent || ref.Component == nil {
 			continue

@@ -314,6 +314,49 @@ func TestUpdateEndpointHandler(t *testing.T) {
 		assert.Equal(t, "r-1", typed.Metadata.Name)
 	})
 
+	t.Run("keeps backend matches and mirrors", func(t *testing.T) {
+		svc := newEndpointService(t, []client.Object{testEndpointObj("r-1")}, &allowAllPDP{})
+		h := newHandlerWithEndpointService(svc)
+
+		body := gen.Endpoint{
+			Metadata: gen.ObjectMeta{Name: "r-1"},
+			Spec: &gen.EndpointSpec{
+				Owner: struct {
+					ProjectName string `json:"projectName"`
+				}{ProjectName: testEndpointProject},
+				Type: gen.EndpointTypeRef{Name: "http-gateway"},
+				BackendRefs: []gen.EndpointBackendRef{
+					{
+						Name:      "canary",
+						Component: &gen.EndpointComponentBackend{Name: "greeter", Endpoint: "http", ReleaseLine: ptr.To("next")},
+						Weight:    ptr.To[int32](0),
+						Match:     &gen.EndpointMatch{Headers: &[]gen.EndpointHeaderMatch{{Name: "x-canary", Value: "true"}}},
+					},
+					{
+						Name:      "shadow",
+						Component: &gen.EndpointComponentBackend{Name: "greeter-go", Endpoint: "http"},
+						Weight:    ptr.To[int32](0),
+						Mirror:    &gen.EndpointMirror{Percent: 10},
+					},
+				},
+			},
+		}
+		resp, err := h.UpdateEndpoint(ctx, gen.UpdateEndpointRequestObject{
+			NamespaceName: testEndpointNs,
+			EndpointName:  "r-1",
+			Body:          &body,
+		})
+		require.NoError(t, err)
+		typed, ok := resp.(gen.UpdateEndpoint200JSONResponse)
+		require.True(t, ok, "expected 200 response, got %T", resp)
+		refs := typed.Spec.BackendRefs
+		require.Len(t, refs, 2)
+		require.NotNil(t, refs[0].Match)
+		assert.Equal(t, "x-canary", (*refs[0].Match.Headers)[0].Name)
+		require.NotNil(t, refs[1].Mirror)
+		assert.Equal(t, int32(10), refs[1].Mirror.Percent)
+	})
+
 	t.Run("nil body returns 400", func(t *testing.T) {
 		svc := newEndpointService(t, nil, &allowAllPDP{})
 		h := newHandlerWithEndpointService(svc)

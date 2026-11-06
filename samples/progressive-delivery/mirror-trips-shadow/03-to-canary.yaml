@@ -1,0 +1,29 @@
+# Step 3: the rewrite held under real traffic. Turn the shadow into a canary:
+# the mirror goes and testers who send x-canary: true reach trips-go, still at
+# weight 0. This is ../canary-trips-rewrite/01-endpoint.yaml; carry on with
+# that demo's steps to move riders over. Clear the binding's mirror override
+# first: an override's mirror needs a backend the release mirrors.
+apiVersion: openchoreo.dev/v1alpha1
+kind: Endpoint
+metadata:
+  name: trips-api
+  namespace: default
+spec:
+  owner:
+    projectName: default
+  type:
+    kind: ClusterEndpointType
+    name: http-progressive
+  visibility: [external]
+  autoDeploy: true
+  parameters:
+    pathPrefix: /trips
+  backendRefs:
+    - name: trips-python
+      component: { name: trips-python, endpoint: http }
+      weight: 100
+    - name: trips-go
+      component: { name: trips-go, endpoint: http }
+      weight: 0
+      match:
+        headers: [{ name: x-canary, value: "true" }]
